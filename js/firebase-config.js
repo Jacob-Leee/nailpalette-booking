@@ -1,3 +1,8 @@
+/*
+ * nailpalette.syd — Firebase Configuration
+ */
+
+// ── FIREBASE CONFIG ──────────────────────────────
 window.firebaseConfig = {
   apiKey:            "AIzaSyAvdUFormvRkT0qRhlSBXU6RiC0U17Mgk4",
   authDomain:        "nailpalettesyd.firebaseapp.com",
@@ -8,7 +13,11 @@ window.firebaseConfig = {
   measurementId:     "G-V77JTEE296"
 };
 
-window._EMAILJS_SERVICE_ID  = "YOUR_EMAILJS_SERVICE_ID";
-window._EMAILJS_TEMPLATE_ID = "YOUR_EMAILJS_TEMPLATE_ID";
-window._EMAILJS_PUBLIC_KEY  = "YOUR_EMAILJS_PUBLIC_KEY";
-window._OWNER_EMAIL = "lucklkh88@gmail.com";
+// ── EMAILJS CONFIG ───────────────────────────────
+window._EMAILJS_SERVICE_ID         = "nailpalette";
+window._EMAILJS_TEMPLATE_ID        = "YOUR_OWNER_TEMPLATE_ID";
+window._EMAILJS_TEMPLATE_CLIENT_ID = "YOUR_CLIENT_TEMPLATE_ID";
+window._EMAILJS_PUBLIC_KEY         = "YOUR_EMAILJS_PUBLIC_KEY";
+
+// ── OWNER NOTIFICATION EMAIL ─────────────────────
+window._OWNER_EMAIL = "J891016@gmail.com";
