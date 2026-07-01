@@ -606,6 +606,7 @@ body {
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>  
 <script src="js/firebase-config.js"></script>
 
 <script>
@@ -734,7 +735,22 @@ async function updateBookingStatus(id, status) {
   if (!db) { showToast('Firebase not configured'); return; }
   try {
     await db.collection('bookings').doc(id).update({ status });
-    showToast(status === 'confirmed' ? '✓ Booking confirmed' : 'Booking cancelled');
+    if (status === 'confirmed') {
+      const snap = await db.collection('bookings').doc(id).get();
+      const bk = snap.data();
+      if (bk.email && window._EMAILJS_PUBLIC_KEY !== 'YOUR_EMAILJS_PUBLIC_KEY') {
+        emailjs.init(window._EMAILJS_PUBLIC_KEY);
+        await emailjs.send(window._EMAILJS_SERVICE_ID, window._EMAILJS_TEMPLATE_CLIENT_ID, {
+          to_email: bk.email, client_name: bk.name,
+          service: bk.service, date: formatDisplayDate(bk.date),
+          time: bk.time, contact: bk.contactMethod + ': ' + bk.contactHandle,
+          addons: (bk.addons || []).join(', ') || 'None'
+        }).catch(e => console.warn('Email failed', e));
+      }
+      showToast('✓ Booking confirmed & email sent');
+    } else {
+      showToast('Booking cancelled');
+    }
     loadBookings();
   } catch (e) {
     showToast('Error updating booking');
