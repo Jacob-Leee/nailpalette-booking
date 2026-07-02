@@ -15,9 +15,9 @@ window.firebaseConfig = {
 
 // ── EMAILJS CONFIG ───────────────────────────────
 window._EMAILJS_SERVICE_ID         = "nailpalette";
-window._EMAILJS_TEMPLATE_ID        = "YOUR_OWNER_TEMPLATE_ID";
+window._EMAILJS_TEMPLATE_ID       = "template_4mo51jl";
 window._EMAILJS_TEMPLATE_CLIENT_ID = "YOUR_CLIENT_TEMPLATE_ID";
-window._EMAILJS_PUBLIC_KEY         = "YOUR_EMAILJS_PUBLIC_KEY";
+window._EMAILJS_PUBLIC_KEY        = "xWF-q9QCw1VKVP9Nb";
 
 // ── OWNER NOTIFICATION EMAIL ─────────────────────
 window._OWNER_EMAIL = "J891016@gmail.com";
