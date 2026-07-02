@@ -230,7 +230,7 @@ async function fetchAvailableSlots(date) {
       const bookingsSnap = await window._db
         .collection('bookings')
         .where('date', '==', dateKey)
-        .where('status', '!=', 'cancelled')
+        .where('status', 'in', ['pending', 'confirmed'])
         .get();
 
       const bookedTimes = new Set(bookingsSnap.docs.map(d => d.data().time));
