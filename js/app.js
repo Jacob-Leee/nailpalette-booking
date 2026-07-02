@@ -25,7 +25,7 @@ const DEFAULT_SCHEDULE = {
   3: ['7:00 PM', '8:00 PM'],                        // Wed evening
   4: ['7:00 PM', '8:00 PM'],                        // Thu evening
   5: ['7:00 PM', '8:00 PM'],                        // Fri evening
-  6: ['10:00 AM', '11:30 AM', '1:00 PM', '2:30 PM', '4:00 PM', '5:30 PM'] // Saturday all day
+  6: ['10:00 AM', '11:30 AM', '1:00 PM', '2:30 PM', '4:00 PM', '5:30 PM', '7:00 PM'] // Saturday all day
 };
 
 // ── DOM REFS ─────────────────────────────────────
@@ -471,6 +471,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!firebase.apps.length) firebase.initializeApp(window.firebaseConfig);
       window._db = firebase.firestore();
       console.log('✓ Firebase connected');
+      // Load vacation blocked dates so they show as unavailable on the calendar
+      loadBlockedDatesForBooking();
     } catch (e) {
       console.warn('Firebase init failed:', e);
     }
@@ -478,3 +480,16 @@ document.addEventListener('DOMContentLoaded', () => {
     console.info('ℹ Firebase not configured yet — running in demo mode');
   }
 });
+
+async function loadBlockedDatesForBooking() {
+  try {
+    const doc = await window._db.collection('settings').doc('blocked_dates').get();
+    if (doc.exists) {
+      const dates = doc.data().dates || [];
+      blockedDates = new Set(dates);
+      renderCalendar(); // Re-render calendar with blocked dates applied
+    }
+  } catch (e) {
+    console.warn('Could not load blocked dates:', e);
+  }
+}
