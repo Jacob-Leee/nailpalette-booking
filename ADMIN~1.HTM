@@ -440,14 +440,15 @@ body {
   background: var(--card);
   border: 0.5px solid var(--border);
   border-radius: 16px;
-  padding: 20px;
+  padding: 16px 12px;
   margin-bottom: 16px;
 }
 .admin-cal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
+  padding: 0 4px;
 }
 .admin-cal-title {
   font-family: 'Cormorant Garamond', Georgia, serif;
@@ -458,11 +459,11 @@ body {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   text-align: center;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 .admin-cal-days-header span {
-  font-size: 10px;
-  letter-spacing: 1.5px;
+  font-size: 9px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--mid);
   padding: 4px 0;
@@ -470,31 +471,25 @@ body {
 .admin-cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 3px;
+  gap: 2px;
 }
 .admin-cal-day {
-  min-height: 60px;
-  border-radius: 10px;
-  padding: 6px;
+  min-height: 52px;
+  border-radius: 8px;
+  padding: 5px 4px;
   cursor: default;
   border: 0.5px solid transparent;
   transition: all 0.15s;
   position: relative;
+  vertical-align: top;
 }
-.admin-cal-day.clickable {
-  cursor: pointer;
-}
-.admin-cal-day.clickable:hover {
-  border-color: rgba(196,168,98,0.3);
-  background: rgba(196,168,98,0.05);
-}
-.admin-cal-day.has-bookings {
-  cursor: pointer;
-}
+.admin-cal-day.clickable { cursor: pointer; }
+.admin-cal-day.clickable:hover,
 .admin-cal-day.has-bookings:hover {
   border-color: rgba(196,168,98,0.3);
   background: rgba(196,168,98,0.05);
 }
+.admin-cal-day.has-bookings { cursor: pointer; }
 .admin-cal-day.drag-over {
   border-color: var(--gold) !important;
   background: rgba(196,168,98,0.15) !important;
@@ -508,43 +503,62 @@ body {
   font-weight: 700;
 }
 .acd-num {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--light);
-  margin-bottom: 4px;
+  margin-bottom: 3px;
+  text-align: center;
 }
 .acd-dot {
-  font-size: 9px;
-  padding: 2px 5px;
-  border-radius: 4px;
+  font-size: 8px;
+  padding: 2px 4px;
+  border-radius: 3px;
   margin-bottom: 2px;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   line-height: 1.4;
+  display: block;
+  max-width: 100%;
 }
-.acd-dot.dot-pending   { background: rgba(138,176,196,0.2); color: #8ab0c4; }
-.acd-dot.dot-confirmed { background: rgba(196,168,98,0.2);  color: var(--gold); }
-.acd-dot.dot-multi     { background: rgba(200,200,200,0.1); color: var(--light); }
+.acd-dot.dot-pending   { background: rgba(138,176,196,0.25); color: #8ab0c4; }
+.acd-dot.dot-confirmed { background: rgba(196,168,98,0.25);  color: var(--gold); }
 .acd-dot[draggable="true"] { cursor: grab; }
 .acd-dot[draggable="true"]:active { cursor: grabbing; opacity: 0.6; }
 
 .cal-legend {
   display: flex;
   gap: 16px;
-  margin-top: 14px;
+  margin-top: 12px;
   justify-content: center;
 }
 .cal-legend-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
+  gap: 5px;
+  font-size: 10px;
   color: var(--light);
 }
 .cal-legend-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+@media (max-width: 480px) {
+  .admin-body { padding: 16px 10px 60px; }
+  .stats-row { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat-card { padding: 12px 8px; }
+  .stat-num { font-size: 26px; }
+  .stat-label { font-size: 9px; letter-spacing: 1px; }
+  .tab-btn { padding: 8px 10px; font-size: 10px; letter-spacing: 1px; }
+  .admin-cal-title { font-size: 17px; }
+  .admin-cal-days-header span { font-size: 8px; letter-spacing: 0; }
+  .acd-num { font-size: 10px; }
+  .acd-dot { font-size: 7px; padding: 1px 3px; }
+  .booking-card { grid-template-columns: 1fr; }
+  .bk-actions { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; margin-top: 8px; }
+  .modal-box { padding: 20px 16px; }
+  .cal-day-panel { padding: 14px 12px; }
 }
 
 /* ── BOOKING MODAL ── */
@@ -881,11 +895,11 @@ body {
       <input class="modal-input" id="mName" type="text" placeholder="e.g. Sarah">
     </div>
     <div class="modal-field">
-      <label class="modal-label">Phone *</label>
+      <label class="modal-label">Phone</label>
       <input class="modal-input" id="mPhone" type="text" placeholder="04xx xxx xxx">
     </div>
     <div class="modal-field">
-      <label class="modal-label">Service *</label>
+      <label class="modal-label">Service</label>
       <select class="modal-select" id="mService">
         <option value="">— Select service —</option>
         <option value="Solid Colour Gel Manicure">Solid Colour Gel Manicure — $50</option>
@@ -1315,8 +1329,8 @@ document.getElementById('modalSaveBtn').addEventListener('click', async () => {
   const email   = document.getElementById('mEmail').value.trim();
   const notes   = document.getElementById('mNotes').value.trim();
 
-  if (!name || !phone || !service || !date || !time) {
-    showToast('Name, phone, service, date and time are required');
+  if (!name || !date || !time) {
+    showToast('Name, date and time are required');
     return;
   }
 
@@ -1459,22 +1473,18 @@ function renderAdminCalendar() {
     numEl.textContent = d;
     el.appendChild(numEl);
 
-    if (bks.length === 1) {
-      const dot = document.createElement('div');
-      dot.className = 'acd-dot ' + (bks[0].status === 'confirmed' ? 'dot-confirmed' : 'dot-pending');
-      dot.textContent = bks[0].time + ' · ' + (bks[0].name || '');
-      if (bks[0].id) {
-        dot.draggable = true;
-        dot.addEventListener('dragstart', e => { e.stopPropagation(); startDrag(e, bks[0].id, bks[0]); });
-      }
-      el.appendChild(dot);
+    if (bks.length > 0) {
       el.classList.add('has-bookings');
-    } else if (bks.length > 1) {
-      const dot = document.createElement('div');
-      dot.className = 'acd-dot dot-multi';
-      dot.textContent = bks.length + ' bookings';
-      el.appendChild(dot);
-      el.classList.add('has-bookings');
+      bks.forEach(bk => {
+        const dot = document.createElement('div');
+        dot.className = 'acd-dot ' + (bk.status === 'confirmed' ? 'dot-confirmed' : 'dot-pending');
+        dot.textContent = bk.time + ' ' + (bk.name || '');
+        if (bk.id) {
+          dot.draggable = true;
+          dot.addEventListener('dragstart', e => { e.stopPropagation(); startDrag(e, bk.id, bk); });
+        }
+        el.appendChild(dot);
+      });
     }
 
     // All future/today days: click → show day panel
