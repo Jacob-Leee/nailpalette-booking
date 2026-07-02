@@ -481,12 +481,23 @@ body {
   transition: all 0.15s;
   position: relative;
 }
+.admin-cal-day.clickable {
+  cursor: pointer;
+}
+.admin-cal-day.clickable:hover {
+  border-color: rgba(196,168,98,0.3);
+  background: rgba(196,168,98,0.05);
+}
 .admin-cal-day.has-bookings {
   cursor: pointer;
 }
 .admin-cal-day.has-bookings:hover {
   border-color: rgba(196,168,98,0.3);
   background: rgba(196,168,98,0.05);
+}
+.admin-cal-day.drag-over {
+  border-color: var(--gold) !important;
+  background: rgba(196,168,98,0.15) !important;
 }
 .admin-cal-day.selected-day {
   border-color: var(--gold);
@@ -514,6 +525,8 @@ body {
 .acd-dot.dot-pending   { background: rgba(138,176,196,0.2); color: #8ab0c4; }
 .acd-dot.dot-confirmed { background: rgba(196,168,98,0.2);  color: var(--gold); }
 .acd-dot.dot-multi     { background: rgba(200,200,200,0.1); color: var(--light); }
+.acd-dot[draggable="true"] { cursor: grab; }
+.acd-dot[draggable="true"]:active { cursor: grabbing; opacity: 0.6; }
 
 .cal-legend {
   display: flex;
@@ -532,6 +545,110 @@ body {
   width: 10px;
   height: 10px;
   border-radius: 3px;
+}
+
+/* ── BOOKING MODAL ── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  z-index: 500;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 20px;
+  padding: 28px 24px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-title {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 20px;
+  color: var(--cream);
+  margin-bottom: 20px;
+}
+.modal-field {
+  margin-bottom: 14px;
+}
+.modal-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--light);
+  margin-bottom: 6px;
+}
+.modal-input, .modal-select, .modal-textarea {
+  width: 100%;
+  padding: 11px 14px;
+  background: rgba(253,250,246,0.07);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  color: var(--cream);
+  font-family: 'Raleway', sans-serif;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.modal-input:focus, .modal-select:focus, .modal-textarea:focus {
+  border-color: rgba(196,168,98,0.5);
+}
+.modal-select { color-scheme: dark; }
+.modal-select option { background: #2a2626; }
+.modal-textarea { resize: vertical; min-height: 70px; }
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+.modal-save {
+  flex: 1;
+  padding: 13px;
+  background: linear-gradient(135deg, var(--gold), #b8973a);
+  border: none;
+  border-radius: 50px;
+  color: white;
+  font-family: 'Raleway', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.modal-delete {
+  padding: 13px 16px;
+  background: none;
+  border: 0.5px solid rgba(192,120,120,0.4);
+  border-radius: 50px;
+  color: #c07878;
+  font-family: 'Raleway', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.modal-cancel {
+  padding: 13px 16px;
+  background: none;
+  border: 0.5px solid var(--border);
+  border-radius: 50px;
+  color: var(--light);
+  font-family: 'Raleway', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 
 .cal-day-panel {
@@ -742,12 +859,84 @@ body {
       </div>
 
       <div class="cal-day-panel" id="calDayPanel" style="display:none">
-        <div class="cal-day-panel-title" id="calDayTitle"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div class="cal-day-panel-title" id="calDayTitle" style="margin-bottom:0"></div>
+          <button class="btn-sm gold" id="calAddBtn" onclick="">+ Add Booking</button>
+        </div>
         <div class="booking-list" id="calDayBookings"></div>
       </div>
 
     </div>
 
+  </div>
+</div>
+
+<!-- ══ BOOKING MODAL ════════════════════════════════ -->
+<div class="modal-overlay" id="bookingModal">
+  <div class="modal-box">
+    <div class="modal-title" id="modalTitle">New Booking</div>
+
+    <div class="modal-field">
+      <label class="modal-label">Name *</label>
+      <input class="modal-input" id="mName" type="text" placeholder="e.g. Sarah">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Phone *</label>
+      <input class="modal-input" id="mPhone" type="text" placeholder="04xx xxx xxx">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Service *</label>
+      <select class="modal-select" id="mService">
+        <option value="">— Select service —</option>
+        <option value="Solid Colour Gel Manicure">Solid Colour Gel Manicure — $50</option>
+        <option value="French / Ombre Gel Manicure">French / Ombre Gel Manicure — $65</option>
+        <option value="Simple Nail Art">Simple Nail Art — from $65</option>
+        <option value="Gel Pedicure - Solid Colour">Gel Pedicure — $55</option>
+        <option value="Solid Colour Gel Manicure + Gel Pedicure - Solid Colour">Mani + Pedi — $50 + $55</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Date *</label>
+      <input class="modal-input" id="mDate" type="date" style="color-scheme:dark">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Time *</label>
+      <select class="modal-select" id="mTime">
+        <option value="">— Select time —</option>
+        <option>7:00 PM</option>
+        <option>8:00 PM</option>
+        <option>10:00 AM</option>
+        <option>11:30 AM</option>
+        <option>1:00 PM</option>
+        <option>2:30 PM</option>
+        <option>3:00 PM</option>
+        <option>4:00 PM</option>
+        <option>4:30 PM</option>
+        <option>5:30 PM</option>
+        <option>6:00 PM</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Status</label>
+      <select class="modal-select" id="mStatus">
+        <option value="confirmed">Confirmed</option>
+        <option value="pending">Pending</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Email (optional)</label>
+      <input class="modal-input" id="mEmail" type="email" placeholder="client@email.com">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Notes</label>
+      <textarea class="modal-textarea" id="mNotes" placeholder="Design preferences, references…"></textarea>
+    </div>
+
+    <div class="modal-actions">
+      <button class="modal-save" id="modalSaveBtn">Save Booking</button>
+      <button class="modal-delete" id="modalDeleteBtn" style="display:none">Delete</button>
+      <button class="modal-cancel" onclick="closeModal()">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -1070,6 +1259,135 @@ async function unblockDate(date) {
   } catch (e) {}
 }
 
+// ── BOOKING MODAL ────────────────────────────────
+let modalEditId = null;    // null = new booking, string = editing existing
+let modalDateKey = null;   // date pre-filled when opening from calendar day
+
+function openAddModal(dateKey) {
+  modalEditId = null;
+  modalDateKey = dateKey;
+  document.getElementById('modalTitle').textContent = 'New Booking';
+  document.getElementById('mName').value = '';
+  document.getElementById('mPhone').value = '';
+  document.getElementById('mService').value = '';
+  document.getElementById('mDate').value = dateKey || '';
+  document.getElementById('mTime').value = '';
+  document.getElementById('mStatus').value = 'confirmed';
+  document.getElementById('mEmail').value = '';
+  document.getElementById('mNotes').value = '';
+  document.getElementById('modalDeleteBtn').style.display = 'none';
+  document.getElementById('bookingModal').classList.add('open');
+}
+
+function openEditModal(bk) {
+  modalEditId = bk.id;
+  modalDateKey = bk.date;
+  document.getElementById('modalTitle').textContent = 'Edit Booking';
+  document.getElementById('mName').value = bk.name || '';
+  document.getElementById('mPhone').value = bk.contactHandle || '';
+  document.getElementById('mService').value = bk.service || '';
+  document.getElementById('mDate').value = bk.date || '';
+  document.getElementById('mTime').value = bk.time || '';
+  document.getElementById('mStatus').value = bk.status || 'confirmed';
+  document.getElementById('mEmail').value = bk.email || '';
+  document.getElementById('mNotes').value = bk.notes || '';
+  document.getElementById('modalDeleteBtn').style.display = 'inline-block';
+  document.getElementById('bookingModal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('bookingModal').classList.remove('open');
+  modalEditId = null;
+}
+
+// Close modal on overlay click
+document.getElementById('bookingModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+document.getElementById('modalSaveBtn').addEventListener('click', async () => {
+  const name    = document.getElementById('mName').value.trim();
+  const phone   = document.getElementById('mPhone').value.trim();
+  const service = document.getElementById('mService').value;
+  const date    = document.getElementById('mDate').value;
+  const time    = document.getElementById('mTime').value;
+  const status  = document.getElementById('mStatus').value;
+  const email   = document.getElementById('mEmail').value.trim();
+  const notes   = document.getElementById('mNotes').value.trim();
+
+  if (!name || !phone || !service || !date || !time) {
+    showToast('Name, phone, service, date and time are required');
+    return;
+  }
+
+  const data = {
+    name, service, date, time, status, notes, email,
+    contactMethod: 'phone',
+    contactHandle: phone,
+    price: '',
+    addons: [],
+    createdAt: new Date().toISOString()
+  };
+
+  if (!db) { showToast('Firebase not configured'); return; }
+
+  try {
+    if (modalEditId) {
+      await db.collection('bookings').doc(modalEditId).update(data);
+      showToast('✓ Booking updated');
+    } else {
+      await db.collection('bookings').add(data);
+      showToast('✓ Booking added');
+    }
+    closeModal();
+    calInitialized = false;
+    await fetchCalBookings();
+    renderAdminCalendar();
+    // Re-open the day panel for that date
+    const bks = adminCalBookings[date] || [];
+    // find the day element and trigger showCalDay
+    setTimeout(() => {
+      const grid = document.getElementById('adminCalGrid');
+      const dayNum = parseInt(date.split('-')[2]);
+      const firstDay = new Date(adminCalDate.getFullYear(), adminCalDate.getMonth(), 1).getDay();
+      const idx = firstDay + dayNum - 1;
+      const el = grid.children[idx];
+      if (el) showCalDay(date, adminCalBookings[date] || [], el);
+    }, 100);
+    loadBookings();
+  } catch (e) {
+    showToast('Error saving booking: ' + e.message);
+  }
+});
+
+document.getElementById('modalDeleteBtn').addEventListener('click', async () => {
+  if (!modalEditId) return;
+  if (!confirm('Delete this booking permanently?')) return;
+  if (!db) { showToast('Firebase not configured'); return; }
+  try {
+    await db.collection('bookings').doc(modalEditId).delete();
+    showToast('Booking deleted');
+    closeModal();
+    calInitialized = false;
+    await fetchCalBookings();
+    renderAdminCalendar();
+    document.getElementById('calDayPanel').style.display = 'none';
+    loadBookings();
+  } catch (e) {
+    showToast('Error deleting booking');
+  }
+});
+
+// ── DRAG & DROP ───────────────────────────────────
+let dragBookingId   = null;
+let dragBookingData = null;
+
+function startDrag(e, bkId, bkData) {
+  dragBookingId   = bkId;
+  dragBookingData = bkData;
+  e.dataTransfer.effectAllowed = 'move';
+}
+
 // ── ADMIN CALENDAR ───────────────────────────────
 const CAL_MONTHS = ['January','February','March','April','May','June',
                     'July','August','September','October','November','December'];
@@ -1133,7 +1451,8 @@ function renderAdminCalendar() {
     const dateKey = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const bks = adminCalBookings[dateKey] || [];
     const el  = document.createElement('div');
-    el.className = 'admin-cal-day' + (dateKey === todayKey ? ' today-day' : '');
+    el.className = 'admin-cal-day clickable' + (dateKey === todayKey ? ' today-day' : '');
+    el.dataset.dateKey = dateKey;
 
     const numEl = document.createElement('div');
     numEl.className = 'acd-num';
@@ -1143,18 +1462,46 @@ function renderAdminCalendar() {
     if (bks.length === 1) {
       const dot = document.createElement('div');
       dot.className = 'acd-dot ' + (bks[0].status === 'confirmed' ? 'dot-confirmed' : 'dot-pending');
-      dot.textContent = bks[0].time;
+      dot.textContent = bks[0].time + ' · ' + (bks[0].name || '');
+      if (bks[0].id) {
+        dot.draggable = true;
+        dot.addEventListener('dragstart', e => { e.stopPropagation(); startDrag(e, bks[0].id, bks[0]); });
+      }
       el.appendChild(dot);
       el.classList.add('has-bookings');
-      el.addEventListener('click', () => showCalDay(dateKey, bks, el));
     } else if (bks.length > 1) {
       const dot = document.createElement('div');
       dot.className = 'acd-dot dot-multi';
       dot.textContent = bks.length + ' bookings';
       el.appendChild(dot);
       el.classList.add('has-bookings');
-      el.addEventListener('click', () => showCalDay(dateKey, bks, el));
     }
+
+    // All future/today days: click → show day panel
+    el.addEventListener('click', () => showCalDay(dateKey, adminCalBookings[dateKey] || [], el));
+
+    // Drag-and-drop: drop target
+    el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drag-over'); });
+    el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+    el.addEventListener('drop', async e => {
+      e.preventDefault();
+      el.classList.remove('drag-over');
+      if (!dragBookingId || !db) return;
+      const newDate = el.dataset.dateKey;
+      if (newDate === dragBookingData.date) return;
+      try {
+        await db.collection('bookings').doc(dragBookingId).update({ date: newDate });
+        showToast('✓ Moved to ' + formatDisplayDate(newDate));
+        dragBookingId = null;
+        calInitialized = false;
+        await fetchCalBookings();
+        renderAdminCalendar();
+        showCalDay(newDate, adminCalBookings[newDate] || [], document.querySelector(`[data-date-key="${newDate}"]`) || el);
+        loadBookings();
+      } catch (err) {
+        showToast('Move failed');
+      }
+    });
 
     grid.appendChild(el);
   }
@@ -1166,15 +1513,18 @@ function renderAdminCalendar() {
 function showCalDay(dateKey, bks, el) {
   // Highlight selected day
   document.querySelectorAll('.admin-cal-day').forEach(d => d.classList.remove('selected-day'));
-  el.classList.add('selected-day');
+  if (el) el.classList.add('selected-day');
 
   const d = new Date(dateKey + 'T12:00:00');
   document.getElementById('calDayTitle').textContent =
     d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
+  // Wire up "Add Booking" button for this date
+  document.getElementById('calAddBtn').onclick = () => openAddModal(dateKey);
+
   const panel = document.getElementById('calDayBookings');
   if (!bks.length) {
-    panel.innerHTML = '<div class="cal-day-empty">No bookings</div>';
+    panel.innerHTML = '<div class="cal-day-empty">No bookings — tap + Add Booking to create one</div>';
   } else {
     panel.innerHTML = bks.map(bk => `
       <div class="booking-card status-${bk.status || 'pending'}" id="bk-cal-${bk.id || ''}">
@@ -1183,19 +1533,21 @@ function showCalDay(dateKey, bks, el) {
           <div class="bk-datetime">${bk.time || '—'}</div>
           <div class="bk-client">
             <strong>${bk.name || '—'}</strong><br>
-            ${bk.contactMethod || 'Phone'}: ${bk.contactHandle || '—'}
+            Phone: ${bk.contactHandle || '—'}
             ${bk.notes ? `<br><em style="color:var(--light)">${bk.notes}</em>` : ''}
           </div>
         </div>
         <div class="bk-actions">
           <span class="bk-status ${bk.status || 'pending'}">${bk.status || 'pending'}</span>
-          ${bk.id && bk.status !== 'confirmed' ? `<button class="bk-btn confirm" onclick="updateBookingStatus('${bk.id}', 'confirmed')">Confirm</button>` : ''}
-          ${bk.id ? `<button class="bk-btn cancel" onclick="updateBookingStatus('${bk.id}', 'cancelled')">Cancel</button>` : ''}
+          ${bk.id ? `<button class="bk-btn confirm" onclick='openEditModal(${JSON.stringify(bk)})'>Edit</button>` : ''}
+          ${bk.id && bk.status !== 'confirmed' ? `<button class="bk-btn confirm" onclick="updateBookingStatus('${bk.id}','confirmed')">Confirm</button>` : ''}
+          ${bk.id ? `<button class="bk-btn cancel" onclick="updateBookingStatus('${bk.id}','cancelled')">Cancel</button>` : ''}
         </div>
       </div>
     `).join('');
   }
   document.getElementById('calDayPanel').style.display = 'block';
+  document.getElementById('calDayPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 document.getElementById('calPrev').addEventListener('click', () => {
