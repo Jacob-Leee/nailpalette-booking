@@ -435,6 +435,125 @@ body {
 }
 .blocked-chip .unblock:hover { color: #c07878; }
 
+/* ── ADMIN CALENDAR ── */
+.admin-cal-wrap {
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.admin-cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.admin-cal-title {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 20px;
+  color: var(--cream);
+}
+.admin-cal-days-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  margin-bottom: 6px;
+}
+.admin-cal-days-header span {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--mid);
+  padding: 4px 0;
+}
+.admin-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.admin-cal-day {
+  min-height: 60px;
+  border-radius: 10px;
+  padding: 6px;
+  cursor: default;
+  border: 0.5px solid transparent;
+  transition: all 0.15s;
+  position: relative;
+}
+.admin-cal-day.has-bookings {
+  cursor: pointer;
+}
+.admin-cal-day.has-bookings:hover {
+  border-color: rgba(196,168,98,0.3);
+  background: rgba(196,168,98,0.05);
+}
+.admin-cal-day.selected-day {
+  border-color: var(--gold);
+  background: rgba(196,168,98,0.08);
+}
+.admin-cal-day.today-day .acd-num {
+  color: var(--gold);
+  font-weight: 700;
+}
+.acd-num {
+  font-size: 12px;
+  color: var(--light);
+  margin-bottom: 4px;
+}
+.acd-dot {
+  font-size: 9px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+.acd-dot.dot-pending   { background: rgba(138,176,196,0.2); color: #8ab0c4; }
+.acd-dot.dot-confirmed { background: rgba(196,168,98,0.2);  color: var(--gold); }
+.acd-dot.dot-multi     { background: rgba(200,200,200,0.1); color: var(--light); }
+
+.cal-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 14px;
+  justify-content: center;
+}
+.cal-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--light);
+}
+.cal-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.cal-day-panel {
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+}
+.cal-day-panel-title {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 17px;
+  color: var(--gold);
+  margin-bottom: 14px;
+}
+.cal-day-empty {
+  font-size: 13px;
+  color: var(--light);
+  font-style: italic;
+  text-align: center;
+  padding: 16px 0;
+}
+
 /* ── LOADING ── */
 .dash-loading {
   text-align: center;
@@ -535,6 +654,7 @@ body {
       <button class="tab-btn active" data-tab="bookings">Bookings</button>
       <button class="tab-btn" data-tab="slots">Manage Slots</button>
       <button class="tab-btn" data-tab="vacation">Vacation</button>
+      <button class="tab-btn" data-tab="calendar">Calendar</button>
     </div>
 
     <!-- TAB: BOOKINGS -->
@@ -597,6 +717,37 @@ body {
       </div>
     </div>
 
+    <!-- TAB: CALENDAR -->
+    <div class="tab-panel" id="tab-calendar">
+
+      <div class="admin-cal-wrap">
+        <div class="admin-cal-header">
+          <button class="btn-sm" id="calPrev">‹</button>
+          <span class="admin-cal-title" id="adminCalTitle"></span>
+          <button class="btn-sm" id="calNext">›</button>
+        </div>
+        <div class="admin-cal-days-header">
+          <span>Sun</span><span>Mon</span><span>Tue</span>
+          <span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+        </div>
+        <div class="admin-cal-grid" id="adminCalGrid"></div>
+        <div class="cal-legend">
+          <div class="cal-legend-item">
+            <div class="cal-legend-dot" style="background:rgba(138,176,196,0.4)"></div>Pending
+          </div>
+          <div class="cal-legend-item">
+            <div class="cal-legend-dot" style="background:rgba(196,168,98,0.4)"></div>Confirmed
+          </div>
+        </div>
+      </div>
+
+      <div class="cal-day-panel" id="calDayPanel" style="display:none">
+        <div class="cal-day-panel-title" id="calDayTitle"></div>
+        <div class="booking-list" id="calDayBookings"></div>
+      </div>
+
+    </div>
+
   </div>
 </div>
 
@@ -606,7 +757,8 @@ body {
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>  
+<!-- EmailJS -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
 <script src="js/firebase-config.js"></script>
 
 <script>
@@ -676,6 +828,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'vacation') loadBlockedDates();
+    if (btn.dataset.tab === 'calendar') initAdminCalendar();
   });
 });
 
@@ -735,18 +888,12 @@ async function updateBookingStatus(id, status) {
   if (!db) { showToast('Firebase not configured'); return; }
   try {
     await db.collection('bookings').doc(id).update({ status });
+
+    // If confirming, send client confirmation email
     if (status === 'confirmed') {
       const snap = await db.collection('bookings').doc(id).get();
       const bk = snap.data();
-      if (bk.email && window._EMAILJS_PUBLIC_KEY !== 'YOUR_EMAILJS_PUBLIC_KEY') {
-        emailjs.init(window._EMAILJS_PUBLIC_KEY);
-        await emailjs.send(window._EMAILJS_SERVICE_ID, window._EMAILJS_TEMPLATE_CLIENT_ID, {
-          to_email: bk.email, client_name: bk.name,
-          service: bk.service, date: formatDisplayDate(bk.date),
-          time: bk.time, contact: bk.contactMethod + ': ' + bk.contactHandle,
-          addons: (bk.addons || []).join(', ') || 'None'
-        }).catch(e => console.warn('Email failed', e));
-      }
+      await sendClientConfirmation(bk);
       showToast('✓ Booking confirmed & email sent');
     } else {
       showToast('Booking cancelled');
@@ -754,6 +901,26 @@ async function updateBookingStatus(id, status) {
     loadBookings();
   } catch (e) {
     showToast('Error updating booking');
+  }
+}
+
+async function sendClientConfirmation(bk) {
+  if (!bk.email) return; // No client email — owner must contact manually
+  if (!window._EMAILJS_PUBLIC_KEY || window._EMAILJS_PUBLIC_KEY === 'YOUR_EMAILJS_PUBLIC_KEY') return;
+
+  try {
+    emailjs.init(window._EMAILJS_PUBLIC_KEY);
+    await emailjs.send(window._EMAILJS_SERVICE_ID, window._EMAILJS_TEMPLATE_CLIENT_ID, {
+      to_email:    bk.email,
+      client_name: bk.name,
+      service:     bk.service,
+      date:        formatDisplayDate(bk.date),
+      time:        bk.time,
+      contact:     `${bk.contactMethod}: ${bk.contactHandle}`,
+      addons:      bk.addons?.join(', ') || 'None'
+    });
+  } catch (e) {
+    console.warn('Client confirmation email failed:', e);
   }
 }
 
@@ -775,11 +942,11 @@ document.getElementById('loadSlotsBtn').addEventListener('click', async () => {
   const dow = new Date(dateVal + 'T12:00:00').getDay();
   const DEFAULT_SCHEDULE = {
     0: ['3:00 PM','4:30 PM','6:00 PM'],
-    1: ['7:00 PM','8:30 PM'],
-    2: ['7:00 PM','8:30 PM'],
-    3: ['7:00 PM','8:30 PM'],
-    4: ['7:00 PM','8:30 PM'],
-    5: ['7:00 PM','8:30 PM'],
+    1: ['7:00 PM','8:00 PM'],
+    2: ['7:00 PM','8:00 PM'],
+    3: ['7:00 PM','8:00 PM'],
+    4: ['7:00 PM','8:00 PM'],
+    5: ['7:00 PM','8:00 PM'],
     6: ['10:00 AM','11:30 AM','1:00 PM','2:30 PM','4:00 PM','5:30 PM']
   };
 
@@ -902,6 +1069,143 @@ async function unblockDate(date) {
     loadBlockedDates();
   } catch (e) {}
 }
+
+// ── ADMIN CALENDAR ───────────────────────────────
+const CAL_MONTHS = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+const CAL_DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+let adminCalDate = new Date();
+let adminCalBookings = {};   // { 'YYYY-MM-DD': [booking, ...] }
+let calInitialized = false;
+
+async function initAdminCalendar() {
+  if (!calInitialized) {
+    calInitialized = true;
+    await fetchCalBookings();
+  }
+  renderAdminCalendar();
+}
+
+async function fetchCalBookings() {
+  adminCalBookings = {};
+  if (!db) {
+    // Demo mode
+    adminCalBookings = {
+      '2026-07-05': [{ name:'Jessica', service:'Simple Nail Art', time:'7:00 PM', status:'pending' }],
+      '2026-07-06': [{ name:'Minji', service:'French / Ombre', time:'10:00 AM', status:'confirmed' }],
+      '2026-07-12': [{ name:'Sarah', service:'Solid Colour', time:'2:30 PM', status:'pending' }]
+    };
+    return;
+  }
+  try {
+    const snap = await db.collection('bookings')
+      .where('status', 'in', ['pending', 'confirmed'])
+      .get();
+    snap.docs.forEach(d => {
+      const bk = { id: d.id, ...d.data() };
+      if (!adminCalBookings[bk.date]) adminCalBookings[bk.date] = [];
+      adminCalBookings[bk.date].push(bk);
+    });
+  } catch (e) {
+    console.warn('Calendar fetch failed:', e);
+  }
+}
+
+function renderAdminCalendar() {
+  const year  = adminCalDate.getFullYear();
+  const month = adminCalDate.getMonth();
+  document.getElementById('adminCalTitle').textContent = `${CAL_MONTHS[month]} ${year}`;
+
+  const firstDay   = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayKey   = new Date().toISOString().split('T')[0];
+
+  const grid = document.getElementById('adminCalGrid');
+  grid.innerHTML = '';
+
+  for (let i = 0; i < firstDay; i++) {
+    const el = document.createElement('div');
+    el.className = 'admin-cal-day';
+    grid.appendChild(el);
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateKey = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const bks = adminCalBookings[dateKey] || [];
+    const el  = document.createElement('div');
+    el.className = 'admin-cal-day' + (dateKey === todayKey ? ' today-day' : '');
+
+    const numEl = document.createElement('div');
+    numEl.className = 'acd-num';
+    numEl.textContent = d;
+    el.appendChild(numEl);
+
+    if (bks.length === 1) {
+      const dot = document.createElement('div');
+      dot.className = 'acd-dot ' + (bks[0].status === 'confirmed' ? 'dot-confirmed' : 'dot-pending');
+      dot.textContent = bks[0].time;
+      el.appendChild(dot);
+      el.classList.add('has-bookings');
+      el.addEventListener('click', () => showCalDay(dateKey, bks, el));
+    } else if (bks.length > 1) {
+      const dot = document.createElement('div');
+      dot.className = 'acd-dot dot-multi';
+      dot.textContent = bks.length + ' bookings';
+      el.appendChild(dot);
+      el.classList.add('has-bookings');
+      el.addEventListener('click', () => showCalDay(dateKey, bks, el));
+    }
+
+    grid.appendChild(el);
+  }
+
+  // Hide day panel on month change
+  document.getElementById('calDayPanel').style.display = 'none';
+}
+
+function showCalDay(dateKey, bks, el) {
+  // Highlight selected day
+  document.querySelectorAll('.admin-cal-day').forEach(d => d.classList.remove('selected-day'));
+  el.classList.add('selected-day');
+
+  const d = new Date(dateKey + 'T12:00:00');
+  document.getElementById('calDayTitle').textContent =
+    d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  const panel = document.getElementById('calDayBookings');
+  if (!bks.length) {
+    panel.innerHTML = '<div class="cal-day-empty">No bookings</div>';
+  } else {
+    panel.innerHTML = bks.map(bk => `
+      <div class="booking-card status-${bk.status || 'pending'}" id="bk-cal-${bk.id || ''}">
+        <div>
+          <div class="bk-service">${bk.service || '—'}</div>
+          <div class="bk-datetime">${bk.time || '—'}</div>
+          <div class="bk-client">
+            <strong>${bk.name || '—'}</strong><br>
+            ${bk.contactMethod || 'Phone'}: ${bk.contactHandle || '—'}
+            ${bk.notes ? `<br><em style="color:var(--light)">${bk.notes}</em>` : ''}
+          </div>
+        </div>
+        <div class="bk-actions">
+          <span class="bk-status ${bk.status || 'pending'}">${bk.status || 'pending'}</span>
+          ${bk.id && bk.status !== 'confirmed' ? `<button class="bk-btn confirm" onclick="updateBookingStatus('${bk.id}', 'confirmed')">Confirm</button>` : ''}
+          ${bk.id ? `<button class="bk-btn cancel" onclick="updateBookingStatus('${bk.id}', 'cancelled')">Cancel</button>` : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+  document.getElementById('calDayPanel').style.display = 'block';
+}
+
+document.getElementById('calPrev').addEventListener('click', () => {
+  adminCalDate.setMonth(adminCalDate.getMonth() - 1);
+  renderAdminCalendar();
+});
+document.getElementById('calNext').addEventListener('click', () => {
+  adminCalDate.setMonth(adminCalDate.getMonth() + 1);
+  renderAdminCalendar();
+});
 
 // ── DEMO DATA ─────────────────────────────────────
 function loadDemoData() {
