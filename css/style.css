@@ -152,6 +152,7 @@ body {
   background: linear-gradient(135deg, rgba(224,212,240,0.2), rgba(242,202,210,0.15));
   opacity: 0;
   transition: opacity 0.2s;
+  pointer-events: none;
 }
 
 .service-card:hover::before { opacity: 1; }
@@ -253,7 +254,8 @@ body {
   border: 0.5px solid var(--border);
   border-radius: 10px;
   cursor: pointer;
-  font-size: 13px;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 15px;
   color: var(--charcoal);
   transition: background 0.2s;
   background: rgba(253,250,246,0.5);
