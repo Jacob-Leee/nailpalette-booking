@@ -20,11 +20,11 @@ const state = {
 // Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6, Sun=0
 const DEFAULT_SCHEDULE = {
   0: ['3:00 PM', '4:30 PM', '6:00 PM'],          // Sunday from 3pm
-  1: ['7:00 PM', '8:30 PM'],                       // Mon evening
-  2: ['7:00 PM', '8:30 PM'],                       // Tue evening
-  3: ['7:00 PM', '8:30 PM'],                       // Wed evening
-  4: ['7:00 PM', '8:30 PM'],                       // Thu evening
-  5: ['7:00 PM', '8:30 PM'],                       // Fri evening
+  1: ['7:00 PM', '8:00 PM'],                        // Mon evening
+  2: ['7:00 PM', '8:00 PM'],                        // Tue evening
+  3: ['7:00 PM', '8:00 PM'],                        // Wed evening
+  4: ['7:00 PM', '8:00 PM'],                        // Thu evening
+  5: ['7:00 PM', '8:00 PM'],                        // Fri evening
   6: ['10:00 AM', '11:30 AM', '1:00 PM', '2:30 PM', '4:00 PM', '5:30 PM'] // Saturday all day
 };
 
@@ -258,23 +258,8 @@ document.getElementById('nextStep2').addEventListener('click', () => goStep(3));
 
 // ── STEP 3: DETAILS ──────────────────────────────
 // Dynamic label for contact handle field
-document.querySelectorAll('input[name="contactMethod"]').forEach(radio => {
-  radio.addEventListener('change', () => {
-    state.contactMethod = radio.value;
-    const labelEl = document.getElementById('contactHandleLabel');
-    const inputEl = document.getElementById('contactHandle');
-    if (radio.value === 'instagram') {
-      labelEl.textContent = 'Instagram handle *';
-      inputEl.placeholder = '@yourusername';
-    } else if (radio.value === 'kakaotalk') {
-      labelEl.textContent = 'KakaoTalk ID *';
-      inputEl.placeholder = 'your KakaoTalk ID';
-    } else {
-      labelEl.textContent = 'Phone number *';
-      inputEl.placeholder = '04xx xxx xxx';
-    }
-  });
-});
+// Contact method fixed to phone
+state.contactMethod = 'phone';
 
 function renderSummaryMini() {
   const el = document.getElementById('bookingSummaryMini');
@@ -305,7 +290,7 @@ document.getElementById('nextStep3').addEventListener('click', () => {
   state.contactHandle = handle;
   state.notes = document.getElementById('clientNotes').value.trim();
   state.email = document.getElementById('clientEmail').value.trim();
-  state.contactMethod = document.querySelector('input[name="contactMethod"]:checked').value;
+  state.contactMethod = 'phone';
 
   goStep(4);
 });
