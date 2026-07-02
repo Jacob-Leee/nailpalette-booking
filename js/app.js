@@ -56,16 +56,32 @@ function goStep(n) {
 const serviceCards = document.querySelectorAll('.service-card');
 const nextStep1 = document.getElementById('nextStep1');
 
+function updateServiceState() {
+  const selected = Array.from(document.querySelectorAll('.service-card.selected'));
+  state.services = selected.map(c => ({
+    name: c.dataset.service,
+    price: c.dataset.price,
+    duration: c.dataset.duration
+  }));
+  // Keep backward compat: state.service = first non-pedicure, or first selected
+  state.service = state.services.find(s => !s.name.includes('Pedicure')) || state.services[0] || null;
+  nextStep1.disabled = state.services.length === 0;
+}
+
 serviceCards.forEach(card => {
   card.addEventListener('click', () => {
-    serviceCards.forEach(c => c.classList.remove('selected'));
-    card.classList.add('selected');
-    state.service = {
-      name: card.dataset.service,
-      price: card.dataset.price,
-      duration: card.dataset.duration
-    };
-    nextStep1.disabled = false;
+    const isPedicure = card.dataset.service.includes('Pedicure');
+    if (isPedicure) {
+      // Pedicure toggles independently
+      card.classList.toggle('selected');
+    } else {
+      // Manicure: single select among non-pedicure cards
+      serviceCards.forEach(c => {
+        if (!c.dataset.service.includes('Pedicure')) c.classList.remove('selected');
+      });
+      card.classList.add('selected');
+    }
+    updateServiceState();
   });
 });
 
@@ -262,8 +278,10 @@ document.querySelectorAll('input[name="contactMethod"]').forEach(radio => {
 
 function renderSummaryMini() {
   const el = document.getElementById('bookingSummaryMini');
+  const servicesText = (state.services || [state.service]).filter(Boolean)
+    .map(s => `${s.name} (${s.price})`).join(' + ');
   el.innerHTML = `
-    <strong>${state.service?.name}</strong> — ${state.service?.price}<br>
+    <strong>${servicesText}</strong><br>
     ${state.date ? state.date.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}
     at ${state.timeSlot || ''}
     ${state.addons.length ? `<br>+ ${state.addons.join(', ')}` : ''}
@@ -313,15 +331,16 @@ function renderReview() {
     </div>`;
   }
 
+  const services = (state.services?.length ? state.services : [state.service]).filter(Boolean);
+  const servicesHTML = services.map((s, i) => `
+    <div class="review-row">
+      <span class="review-label">${i === 0 ? 'Service' : '+'}</span>
+      <span class="review-val gold">${s.name} — ${s.price}</span>
+    </div>
+  `).join('');
+
   el.innerHTML = `
-    <div class="review-row">
-      <span class="review-label">Service</span>
-      <span class="review-val gold">${state.service?.name}</span>
-    </div>
-    <div class="review-row">
-      <span class="review-label">Price</span>
-      <span class="review-val gold">${state.service?.price}</span>
-    </div>
+    ${servicesHTML}
     ${addonsHTML}
     <div class="review-row">
       <span class="review-label">Date</span>
@@ -374,9 +393,10 @@ async function submitBooking() {
     }
   }
 
+  const allServices = (state.services?.length ? state.services : [state.service]).filter(Boolean);
   const booking = {
-    service: state.service?.name,
-    price: state.service?.price,
+    service: allServices.map(s => s.name).join(' + '),
+    price: allServices.map(s => s.price).join(' + '),
     addons: state.addons,
     date: dateKey,
     time: state.timeSlot,
@@ -416,7 +436,7 @@ async function submitBooking() {
       await emailjs.send(window._EMAILJS_SERVICE_ID, window._EMAILJS_TEMPLATE_ID, {
         to_name:      'nailpalette.syd',
         client_name:  state.name,
-        service:      state.service?.name,
+        service:      booking.service,
         date:         state.date?.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
         time:         state.timeSlot,
         contact:      `${state.contactMethod}: ${state.contactHandle}`,
@@ -439,6 +459,7 @@ function showSuccess(booking) {
     <strong>${booking.service}</strong><br>
     ${state.date?.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })} at ${booking.time}
     ${booking.addons.length ? `<br>+ ${booking.addons.join(', ')}` : ''}
+    <br>Total: ${booking.price}
     <br><br>
     <em style="font-size:12px;color:#9A8F94">We'll reach you via ${booking.contactMethod}: ${booking.contactHandle}</em>
   `;
