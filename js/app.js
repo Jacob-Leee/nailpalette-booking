@@ -1,495 +1,1716 @@
-/* ══════════════════════════════════════════════
-   nailpalette.syd — Booking App Logic
-   ══════════════════════════════════════════════ */
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#2C2828">
+<title>nailpalette.syd — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Raleway:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-// ── STATE ────────────────────────────────────────
-const state = {
-  step: 1,
-  service: null,
-  addons: [],
-  date: null,        // JS Date object
-  timeSlot: null,    // "7:00 PM"
-  name: '',
-  contactMethod: 'instagram',
-  contactHandle: '',
-  notes: '',
-  email: ''
-};
-
-// ── WEEKLY SCHEDULE TEMPLATE (fallback if Firebase not set up yet) ──
-// Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6, Sun=0
-const DEFAULT_SCHEDULE = {
-  0: ['3:00 PM', '4:30 PM', '6:00 PM'],          // Sunday from 3pm
-  1: ['7:00 PM', '8:00 PM'],                        // Mon evening
-  2: ['7:00 PM', '8:00 PM'],                        // Tue evening
-  3: ['7:00 PM', '8:00 PM'],                        // Wed evening
-  4: ['7:00 PM', '8:00 PM'],                        // Thu evening
-  5: ['7:00 PM', '8:00 PM'],                        // Fri evening
-  6: ['10:00 AM', '11:30 AM', '1:00 PM', '2:30 PM', '4:00 PM', '5:30 PM', '7:00 PM'] // Saturday all day
-};
-
-// ── DOM REFS ─────────────────────────────────────
-const steps = document.querySelectorAll('.step');
-const progressBar = document.getElementById('progressBar');
-const stepLabels = document.querySelectorAll('.step-label');
-
-// ── NAVIGATION ───────────────────────────────────
-function goStep(n) {
-  steps.forEach(s => s.classList.remove('active'));
-  document.getElementById(`step${n}`).classList.add('active');
-
-  stepLabels.forEach(l => {
-    l.classList.toggle('active', parseInt(l.dataset.step) === n);
-  });
-
-  const pct = Math.round((n / 5) * 100);
-  progressBar.style.width = pct + '%';
-  state.step = n;
-
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-
-  if (n === 3) renderSummaryMini();
-  if (n === 4) renderReview();
+:root {
+  --cream:    #FDFAF6;
+  --gold:     #C4A862;
+  --charcoal: #2C2828;
+  --mid:      #5A5358;
+  --light:    #9A8F94;
+  --border:   rgba(196,168,98,0.2);
+  --bg:       #1e1b1b;
+  --card:     #2a2626;
+  --card2:    #302c2c;
 }
 
-// ── STEP 1: SERVICE SELECTION ─────────────────────
-const serviceCards = document.querySelectorAll('.service-card');
-const nextStep1 = document.getElementById('nextStep1');
-
-function updateServiceState() {
-  const selected = Array.from(document.querySelectorAll('.service-card.selected'));
-  state.services = selected.map(c => ({
-    name: c.dataset.service,
-    price: c.dataset.price,
-    duration: c.dataset.duration
-  }));
-  // Keep backward compat: state.service = first non-pedicure, or first selected
-  state.service = state.services.find(s => !s.name.includes('Pedicure')) || state.services[0] || null;
-  nextStep1.disabled = state.services.length === 0;
+body {
+  font-family: 'Raleway', sans-serif;
+  background: var(--bg);
+  color: var(--cream);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
 
-serviceCards.forEach(card => {
-  card.addEventListener('click', () => {
-    const isPedicure = card.dataset.service.includes('Pedicure');
-    if (isPedicure) {
-      // Pedicure toggles independently
-      card.classList.toggle('selected');
-    } else {
-      // Manicure: single select among non-pedicure cards
-      serviceCards.forEach(c => {
-        if (!c.dataset.service.includes('Pedicure')) c.classList.remove('selected');
-      });
-      card.classList.add('selected');
-    }
-    updateServiceState();
-  });
-});
+/* ── LOGIN SCREEN ── */
+#loginScreen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px;
+}
 
-// Add-ons
-document.querySelectorAll('.addon-item input[type="checkbox"]').forEach(cb => {
-  cb.addEventListener('change', () => {
-    state.addons = Array.from(
-      document.querySelectorAll('.addon-item input[type="checkbox"]:checked')
-    ).map(c => c.value);
-  });
-});
+.login-box {
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 20px;
+  padding: 36px 28px;
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+}
 
-nextStep1.addEventListener('click', () => goStep(2));
+.login-brand {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 30px;
+  font-weight: 400;
+  color: var(--cream);
+  letter-spacing: 3px;
+  margin-bottom: 4px;
+}
+.login-brand em { color: var(--gold); font-style: italic; }
 
-// ── STEP 2: CALENDAR ─────────────────────────────
-let calDate = new Date();
-calDate.setDate(1);
+.login-sub {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--light);
+  margin-bottom: 28px;
+}
 
-const calMonthEl = document.getElementById('calMonth');
-const calGrid = document.getElementById('calGrid');
+.login-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--light);
+  display: block;
+  text-align: left;
+  margin-bottom: 6px;
+}
 
-const MONTHS = ['January','February','March','April','May','June',
-                'July','August','September','October','November','December'];
-const today = new Date();
-today.setHours(0,0,0,0);
+.login-input {
+  width: 100%;
+  padding: 12px 14px;
+  background: rgba(253,250,246,0.07);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  color: var(--cream);
+  font-family: 'Raleway', sans-serif;
+  font-size: 14px;
+  outline: none;
+  margin-bottom: 14px;
+  transition: border-color 0.2s;
+}
+.login-input:focus { border-color: rgba(196,168,98,0.5); }
 
-// Dates blocked as vacations from Firestore (filled in after Firebase loads)
-let blockedDates = new Set();
-// Individual slot overrides from Firestore { "YYYY-MM-DD": ["10:00 AM", ...] or [] (block all) }
-let slotOverrides = {};
+.login-btn {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, var(--gold), #b8973a);
+  border: none;
+  border-radius: 50px;
+  color: white;
+  font-family: 'Raleway', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  margin-top: 6px;
+  transition: all 0.2s;
+}
+.login-btn:hover { box-shadow: 0 6px 20px rgba(196,168,98,0.3); }
 
-function renderCalendar() {
-  const year = calDate.getFullYear();
-  const month = calDate.getMonth();
-  calMonthEl.textContent = `${MONTHS[month]} ${year}`;
+.login-error {
+  font-size: 12px;
+  color: #e88080;
+  margin-top: 10px;
+  min-height: 18px;
+}
 
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+/* ── ADMIN DASHBOARD ── */
+#dashboard { display: none; }
 
-  calGrid.innerHTML = '';
+.admin-header {
+  background: var(--card);
+  border-bottom: 0.5px solid var(--border);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
 
-  // Empty cells before first day
-  for (let i = 0; i < firstDay; i++) {
-    const el = document.createElement('div');
-    el.className = 'cal-day empty';
-    calGrid.appendChild(el);
+.admin-brand {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--cream);
+  letter-spacing: 2px;
+}
+.admin-brand em { color: var(--gold); font-style: italic; }
+
+.admin-actions { display: flex; gap: 10px; align-items: center; }
+.btn-text-short { display: none; }
+.btn-text-full  { display: inline; }
+
+.btn-sm {
+  padding: 7px 14px;
+  border-radius: 50px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  border: 0.5px solid var(--border);
+  background: transparent;
+  color: var(--light);
+  transition: all 0.2s;
+}
+.btn-sm:hover { border-color: var(--gold); color: var(--gold); }
+.btn-sm.gold {
+  background: linear-gradient(135deg, var(--gold), #b8973a);
+  border-color: transparent;
+  color: white;
+}
+
+.admin-body {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px 16px 60px;
+}
+
+/* ── TAB NAV ── */
+.tab-nav {
+  display: flex;
+  gap: 4px;
+  border-bottom: 0.5px solid var(--border);
+  margin-bottom: 24px;
+}
+.tab-btn {
+  padding: 10px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--light);
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -0.5px;
+  transition: all 0.2s;
+}
+.tab-btn.active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── STATS ROW ── */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  text-align: center;
+}
+.stat-num {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 32px;
+  font-weight: 400;
+  color: var(--gold);
+}
+.stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--light);
+  margin-top: 4px;
+}
+
+/* ── BOOKING CARDS ── */
+.section-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--light);
+  margin-bottom: 14px;
+}
+
+.booking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.booking-card {
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: start;
+}
+.booking-card.status-confirmed { border-left: 3px solid var(--gold); }
+.booking-card.status-pending   { border-left: 3px solid #8ab0c4; }
+.booking-card.status-cancelled { opacity: 0.4; }
+
+.bk-service {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 17px;
+  color: var(--cream);
+  margin-bottom: 4px;
+}
+.bk-datetime {
+  font-size: 12px;
+  color: var(--gold);
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+.bk-client {
+  font-size: 12px;
+  color: var(--light);
+  line-height: 1.6;
+}
+.bk-client strong { color: var(--cream); }
+
+.bk-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.bk-status {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: rgba(196,168,98,0.12);
+  color: var(--gold);
+}
+.bk-status.pending  { background: rgba(138,176,196,0.12); color: #8ab0c4; }
+.bk-status.cancelled { background: rgba(180,100,100,0.1); color: #c07878; }
+
+.bk-btn {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: 0.5px solid var(--border);
+  background: none;
+  cursor: pointer;
+  color: var(--light);
+  transition: all 0.2s;
+}
+.bk-btn:hover { color: var(--gold); border-color: rgba(196,168,98,0.5); }
+.bk-btn.confirm { color: var(--gold); border-color: rgba(196,168,98,0.4); }
+.bk-btn.cancel  { color: #c07878; border-color: rgba(180,100,100,0.3); }
+
+/* ── SLOT MANAGEMENT ── */
+.slot-date-pick {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.slot-date-pick input[type="date"] {
+  padding: 10px 14px;
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  color: var(--cream);
+  font-family: 'Raleway', sans-serif;
+  font-size: 13px;
+  outline: none;
+  color-scheme: dark;
+}
+
+.slot-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.slot-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 50px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--cream);
+}
+.slot-chip .remove-slot {
+  cursor: pointer;
+  color: var(--light);
+  font-size: 16px;
+  line-height: 1;
+  transition: color 0.2s;
+}
+.slot-chip .remove-slot:hover { color: #c07878; }
+
+.slot-add-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.slot-add-form input[type="time"] {
+  padding: 10px 14px;
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  color: var(--cream);
+  font-family: 'Raleway', sans-serif;
+  font-size: 13px;
+  outline: none;
+  color-scheme: dark;
+}
+
+/* ── VACATION BLOCK ── */
+.vacation-block {
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+.vacation-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.vacation-row label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--light);
+  display: block;
+  margin-bottom: 6px;
+}
+.vacation-row input[type="date"] {
+  padding: 10px 14px;
+  background: rgba(253,250,246,0.06);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--cream);
+  font-family: 'Raleway', sans-serif;
+  font-size: 13px;
+  outline: none;
+  color-scheme: dark;
+}
+
+.blocked-dates-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.blocked-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(200,100,100,0.1);
+  border: 0.5px solid rgba(200,100,100,0.3);
+  border-radius: 50px;
+  font-size: 12px;
+  color: #c07878;
+}
+.blocked-chip .unblock {
+  cursor: pointer;
+  font-size: 14px;
+  color: rgba(200,100,100,0.6);
+}
+.blocked-chip .unblock:hover { color: #c07878; }
+
+/* ── ADMIN CALENDAR ── */
+.admin-cal-wrap {
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 16px;
+  padding: 16px 12px;
+  margin-bottom: 16px;
+}
+.admin-cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding: 0 4px;
+}
+.admin-cal-title {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 20px;
+  color: var(--cream);
+}
+.admin-cal-days-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  margin-bottom: 4px;
+}
+.admin-cal-days-header span {
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--mid);
+  padding: 4px 0;
+}
+.admin-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.admin-cal-day {
+  min-height: 52px;
+  border-radius: 8px;
+  padding: 5px 4px;
+  cursor: default;
+  border: 0.5px solid transparent;
+  transition: all 0.15s;
+  position: relative;
+  vertical-align: top;
+}
+.admin-cal-day.clickable { cursor: pointer; }
+.admin-cal-day.clickable:hover,
+.admin-cal-day.has-bookings:hover {
+  border-color: rgba(196,168,98,0.3);
+  background: rgba(196,168,98,0.05);
+}
+.admin-cal-day.has-bookings { cursor: pointer; }
+.admin-cal-day.drag-over {
+  border-color: var(--gold) !important;
+  background: rgba(196,168,98,0.15) !important;
+}
+.admin-cal-day.selected-day {
+  border-color: var(--gold);
+  background: rgba(196,168,98,0.08);
+}
+.admin-cal-day.today-day .acd-num {
+  color: var(--gold);
+  font-weight: 700;
+}
+.admin-cal-day.past-day { opacity: 0.35; }
+.admin-cal-day.past-day .acd-dot { filter: grayscale(0.6); }
+.acd-num {
+  font-size: 11px;
+  color: var(--light);
+  margin-bottom: 3px;
+  text-align: center;
+}
+.acd-dot {
+  font-size: 8px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+  display: block;
+  max-width: 100%;
+}
+.acd-dot.dot-pending   { background: rgba(138,176,196,0.25); color: #8ab0c4; }
+.acd-dot.dot-confirmed { background: rgba(196,168,98,0.25);  color: var(--gold); }
+.acd-dot[draggable="true"] { cursor: grab; }
+.acd-dot[draggable="true"]:active { cursor: grabbing; opacity: 0.6; }
+
+.cal-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 12px;
+  justify-content: center;
+}
+.cal-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--light);
+}
+.cal-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+@media (max-width: 600px) {
+  /* ── 헤더 ── */
+  .admin-header { padding: 12px 14px; }
+  .admin-brand { font-size: 18px; }
+  .btn-text-full { display: none; }
+  .btn-text-short { display: inline; }
+
+  /* ── 바디 ── */
+  .admin-body { padding: 14px 10px 80px; }
+
+  /* ── 스탯 ── */
+  .stats-row { gap: 8px; margin-bottom: 16px; }
+  .stat-card { padding: 12px 6px; border-radius: 12px; }
+  .stat-num { font-size: 28px; }
+  .stat-label { font-size: 9px; letter-spacing: 1px; }
+
+  /* ── 탭 (가로 스크롤) ── */
+  .tab-nav {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 0;
+    margin-bottom: 18px;
+  }
+  .tab-nav::-webkit-scrollbar { display: none; }
+  .tab-btn {
+    padding: 10px 12px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
-  for (let d = 1; d <= daysInMonth; d++) {
-    const date = new Date(year, month, d);
-    const el = document.createElement('div');
-    el.className = 'cal-day';
-    el.textContent = d;
-
-    const isPast = date < today;
-    const dateKey = formatDateKey(date);
-    const isBlocked = blockedDates.has(dateKey);
-    const dow = date.getDay();
-    const hasSlots = DEFAULT_SCHEDULE[dow] && DEFAULT_SCHEDULE[dow].length > 0;
-
-    if (date.getTime() === today.getTime()) el.classList.add('today');
-
-    if (isPast || isBlocked || !hasSlots) {
-      el.classList.add(isPast ? 'past' : 'unavailable');
-    } else {
-      el.classList.add('available');
-      el.addEventListener('click', () => selectDate(date, el));
-    }
-
-    // Mark selected
-    if (state.date && date.getTime() === state.date.getTime()) {
-      el.classList.add('selected');
-    }
-
-    calGrid.appendChild(el);
+  /* ── 예약 카드 ── */
+  .booking-card {
+    grid-template-columns: 1fr;
+    padding: 14px;
+    gap: 10px;
   }
+  .bk-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .bk-service { font-size: 16px; }
+  .bk-btn { padding: 7px 12px; font-size: 11px; }
+
+  /* ── 달력 ── */
+  .admin-cal-wrap { padding: 12px 8px; border-radius: 14px; }
+  .admin-cal-title { font-size: 16px; }
+  .admin-cal-days-header span { font-size: 8px; letter-spacing: 0; }
+  .admin-cal-day { min-height: 44px; padding: 4px 3px; border-radius: 6px; }
+  .acd-num { font-size: 10px; }
+  .acd-dot { font-size: 7px; padding: 1px 3px; border-radius: 2px; }
+  .btn-sm { padding: 7px 12px; font-size: 10px; }
+
+  /* ── 날짜 패널 ── */
+  .cal-day-panel { padding: 14px 12px; border-radius: 12px; }
+  .cal-day-panel-title { font-size: 15px; }
+
+  /* ── Vacation / Slots 폼 ── */
+  .vacation-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .vacation-row input[type="date"] { width: 100%; }
+  .slot-date-pick { flex-wrap: wrap; }
+  .slot-date-pick input[type="date"] { flex: 1; min-width: 0; }
+  .slot-add-form { flex-wrap: wrap; }
+  .slot-add-form input[type="time"] { flex: 1; }
+
+  /* ── 모달 → 바텀시트 ── */
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal-box {
+    border-radius: 20px 20px 0 0;
+    max-width: 100%;
+    max-height: 92vh;
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
+  }
+  .modal-box::before {
+    content: '';
+    display: block;
+    width: 36px;
+    height: 4px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 2px;
+    margin: 0 auto 16px;
+  }
+  .modal-actions { flex-wrap: wrap; }
+  .modal-save { order: 1; }
+  .modal-cancel { order: 2; }
+  .modal-delete { order: 3; width: 100%; text-align: center; }
+
+  /* ── safe area (iPhone 홈바) ── */
+  .admin-header { padding-top: max(12px, env(safe-area-inset-top)); }
+  .admin-body { padding-bottom: max(80px, calc(60px + env(safe-area-inset-bottom))); }
 }
 
-function selectDate(date, el) {
-  document.querySelectorAll('.cal-day.selected').forEach(c => c.classList.remove('selected'));
-  el.classList.add('selected');
-  state.date = date;
-  state.timeSlot = null;
-  document.getElementById('nextStep2').disabled = true;
-  loadTimeSlots(date);
+/* ── BOOKING MODAL ── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  z-index: 500;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.modal-overlay.open {
+  display: flex;
+  opacity: 1;
+}
+.modal-box {
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 20px;
+  padding: 28px 24px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+  transform: translateY(20px);
+  transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+}
+.modal-overlay.open .modal-box { transform: translateY(0); }
+.modal-title {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 20px;
+  color: var(--cream);
+  margin-bottom: 20px;
+}
+.modal-field {
+  margin-bottom: 14px;
+}
+.modal-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--light);
+  margin-bottom: 6px;
+}
+.modal-input, .modal-select, .modal-textarea {
+  width: 100%;
+  padding: 11px 14px;
+  background: rgba(253,250,246,0.07);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  color: var(--cream);
+  font-family: 'Raleway', sans-serif;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.modal-input:focus, .modal-select:focus, .modal-textarea:focus {
+  border-color: rgba(196,168,98,0.5);
+}
+.modal-select { color-scheme: dark; }
+.modal-select option { background: #2a2626; }
+.modal-textarea { resize: vertical; min-height: 70px; }
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+.modal-save {
+  flex: 1;
+  padding: 13px;
+  background: linear-gradient(135deg, var(--gold), #b8973a);
+  border: none;
+  border-radius: 50px;
+  color: white;
+  font-family: 'Raleway', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.modal-delete {
+  padding: 13px 16px;
+  background: none;
+  border: 0.5px solid rgba(192,120,120,0.4);
+  border-radius: 50px;
+  color: #c07878;
+  font-family: 'Raleway', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.modal-cancel {
+  padding: 13px 16px;
+  background: none;
+  border: 0.5px solid var(--border);
+  border-radius: 50px;
+  color: var(--light);
+  font-family: 'Raleway', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 
-function loadTimeSlots(date) {
-  const wrap = document.getElementById('timeSlotsWrap');
-  const loading = document.getElementById('loadingSlots');
-  const noSlots = document.getElementById('noSlots');
-  const timeGrid = document.getElementById('timeGrid');
-  const dateLabel = document.getElementById('selectedDateLabel');
+.cal-day-panel {
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+}
+.cal-day-panel-title {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 17px;
+  color: var(--gold);
+  margin-bottom: 14px;
+}
+.cal-day-empty {
+  font-size: 13px;
+  color: var(--light);
+  font-style: italic;
+  text-align: center;
+  padding: 16px 0;
+}
 
-  wrap.style.display = 'none';
-  noSlots.style.display = 'none';
-  loading.style.display = 'flex';
+/* ── LOADING ── */
+.dash-loading {
+  text-align: center;
+  padding: 40px;
+  color: var(--light);
+  font-size: 14px;
+  font-style: italic;
+}
 
-  dateLabel.textContent = date.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
+.empty-state {
+  text-align: center;
+  padding: 30px;
+  color: var(--light);
+  font-size: 13px;
+  font-style: italic;
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+}
 
-  // Load from Firestore (or fall back to default schedule)
-  fetchAvailableSlots(date).then(slots => {
-    loading.style.display = 'none';
+/* ── TOAST ── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--card2);
+  border: 0.5px solid var(--border);
+  border-radius: 50px;
+  padding: 12px 22px;
+  font-size: 13px;
+  color: var(--cream);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s;
+  z-index: 999;
+  white-space: nowrap;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+</style>
+</head>
+<body>
 
-    if (!slots || slots.length === 0) {
-      noSlots.style.display = 'block';
-      return;
-    }
+<!-- ══ LOGIN ═══════════════════════════════════════ -->
+<div id="loginScreen">
+  <div class="login-box">
+    <div class="login-brand">nail<em>palette</em><span style="color:var(--gold);font-size:22px">.syd</span></div>
+    <div class="login-sub">Owner Dashboard</div>
 
-    timeGrid.innerHTML = '';
-    slots.forEach(slot => {
-      const btn = document.createElement('button');
-      btn.className = 'time-slot' + (slot.booked ? ' booked' : '');
-      btn.textContent = slot.time;
-      btn.disabled = slot.booked;
-      if (!slot.booked) {
-        btn.addEventListener('click', () => {
-          document.querySelectorAll('.time-slot.selected').forEach(b => b.classList.remove('selected'));
-          btn.classList.add('selected');
-          state.timeSlot = slot.time;
-          document.getElementById('nextStep2').disabled = false;
-        });
-      }
-      timeGrid.appendChild(btn);
-    });
+    <label class="login-label">Email</label>
+    <input class="login-input" type="email" id="loginEmail" value="J891016@gmail.com" placeholder="your@email.com">
 
-    wrap.style.display = 'block';
+    <label class="login-label">Password</label>
+    <input class="login-input" type="password" id="loginPass" placeholder="••••••••">
+
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer;text-align:left">
+      <input type="checkbox" id="rememberMe" style="
+        width:16px;height:16px;accent-color:var(--gold);cursor:pointer;flex-shrink:0">
+      <span style="font-size:11px;color:var(--light);letter-spacing:1px">Remember me</span>
+    </label>
+
+    <button class="login-btn" id="loginBtn">Sign In →</button>
+    <div class="login-error" id="loginError"></div>
+
+    <div style="margin-top:16px;font-size:11px;color:var(--light)">
+      <a href="index.html" style="color:var(--light);text-decoration:none">← Back to booking page</a>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DASHBOARD ════════════════════════════════════ -->
+<div id="dashboard">
+  <header class="admin-header">
+    <div class="admin-brand">nail<em>palette</em></div>
+    <div class="admin-actions">
+      <a href="index.html" class="btn-sm" id="viewBookingBtn"><span class="btn-text-full">View Booking Page</span><span class="btn-text-short">↗ Booking</span></a>
+      <button class="btn-sm" id="logoutBtn">Sign Out</button>
+    </div>
+  </header>
+
+  <div class="admin-body">
+
+    <!-- STATS -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-num" id="statPending">—</div>
+        <div class="stat-label">Pending</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" id="statConfirmed">—</div>
+        <div class="stat-label">Confirmed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" id="statTotal">—</div>
+        <div class="stat-label">Total</div>
+      </div>
+    </div>
+
+    <!-- TABS -->
+    <div class="tab-nav">
+      <button class="tab-btn active" data-tab="bookings">Bookings</button>
+      <button class="tab-btn" data-tab="calendar">Calendar</button>
+      <button class="tab-btn" data-tab="slots">Manage Slots</button>
+      <button class="tab-btn" data-tab="vacation">Vacation</button>
+    </div>
+
+    <!-- TAB: BOOKINGS -->
+    <div class="tab-panel active" id="tab-bookings">
+      <div class="section-title">Upcoming Bookings</div>
+      <div class="booking-list" id="bookingList">
+        <div class="dash-loading">Loading bookings…</div>
+      </div>
+    </div>
+
+    <!-- TAB: SLOTS -->
+    <div class="tab-panel" id="tab-slots">
+      <div class="section-title">Manage Available Slots</div>
+      <p style="font-size:12px;color:var(--light);margin-bottom:16px;line-height:1.6">
+        By default, slots follow your weekly schedule. Override specific dates here.
+      </p>
+
+      <div class="slot-date-pick">
+        <input type="date" id="slotDateInput">
+        <button class="btn-sm gold" id="loadSlotsBtn">Load</button>
+      </div>
+
+      <div id="slotEditor" style="display:none">
+        <div class="section-title" id="slotDateLabel"></div>
+        <div class="slot-list" id="slotList"></div>
+        <div class="slot-add-form">
+          <input type="time" id="newSlotTime">
+          <button class="btn-sm gold" id="addSlotBtn">+ Add Slot</button>
+          <button class="btn-sm" id="saveSlotsBtn">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: VACATION -->
+    <div class="tab-panel" id="tab-vacation">
+      <div class="section-title">Block Vacation Dates</div>
+      <p style="font-size:12px;color:var(--light);margin-bottom:16px;line-height:1.6">
+        Blocked dates won't appear as available on the booking page.
+      </p>
+
+      <div class="vacation-block">
+        <div class="vacation-row">
+          <div>
+            <label>From</label>
+            <input type="date" id="vacFrom">
+          </div>
+          <div>
+            <label>To</label>
+            <input type="date" id="vacTo">
+          </div>
+          <div style="padding-top:22px">
+            <button class="btn-sm gold" id="blockVacBtn">Block Range</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">Currently Blocked</div>
+      <div class="blocked-dates-list" id="blockedList">
+        <div style="font-size:12px;color:var(--light);font-style:italic">None blocked</div>
+      </div>
+    </div>
+
+    <!-- TAB: CALENDAR -->
+    <div class="tab-panel" id="tab-calendar">
+
+      <div class="admin-cal-wrap">
+        <div class="admin-cal-header">
+          <button class="btn-sm" id="calPrev">‹</button>
+          <span class="admin-cal-title" id="adminCalTitle"></span>
+          <button class="btn-sm" id="calNext">›</button>
+        </div>
+        <div class="admin-cal-days-header">
+          <span>Sun</span><span>Mon</span><span>Tue</span>
+          <span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+        </div>
+        <div class="admin-cal-grid" id="adminCalGrid"></div>
+        <div class="cal-legend">
+          <div class="cal-legend-item">
+            <div class="cal-legend-dot" style="background:rgba(138,176,196,0.4)"></div>Pending
+          </div>
+          <div class="cal-legend-item">
+            <div class="cal-legend-dot" style="background:rgba(196,168,98,0.4)"></div>Confirmed
+          </div>
+        </div>
+      </div>
+
+      <div class="cal-day-panel" id="calDayPanel" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div class="cal-day-panel-title" id="calDayTitle" style="margin-bottom:0"></div>
+          <button class="btn-sm gold" id="calAddBtn" onclick="">+ Add Booking</button>
+        </div>
+        <div class="booking-list" id="calDayBookings"></div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ BOOKING MODAL ════════════════════════════════ -->
+<div class="modal-overlay" id="bookingModal">
+  <div class="modal-box">
+    <div class="modal-title" id="modalTitle">New Booking</div>
+
+    <div class="modal-field">
+      <label class="modal-label">Name *</label>
+      <input class="modal-input" id="mName" type="text" placeholder="e.g. Sarah">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Phone</label>
+      <input class="modal-input" id="mPhone" type="text" placeholder="04xx xxx xxx">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Service</label>
+      <select class="modal-select" id="mService">
+        <option value="">— Select service —</option>
+        <option value="Solid Colour Gel Manicure">Solid Colour Gel Manicure — $50</option>
+        <option value="French / Ombre Gel Manicure">French / Ombre Gel Manicure — $65</option>
+        <option value="Simple Nail Art">Simple Nail Art — from $65</option>
+        <option value="Gel Pedicure - Solid Colour">Gel Pedicure — $55</option>
+        <option value="Solid Colour Gel Manicure + Gel Pedicure - Solid Colour">Mani + Pedi — $50 + $55</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Date *</label>
+      <input class="modal-input" id="mDate" type="date" style="color-scheme:dark">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Time *</label>
+      <select class="modal-select" id="mTime">
+        <option value="">— Select time —</option>
+        <option>7:00 PM</option>
+        <option>8:00 PM</option>
+        <option>10:00 AM</option>
+        <option>11:30 AM</option>
+        <option>1:00 PM</option>
+        <option>2:30 PM</option>
+        <option>3:00 PM</option>
+        <option>4:00 PM</option>
+        <option>4:30 PM</option>
+        <option>5:30 PM</option>
+        <option>6:00 PM</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Status</label>
+      <select class="modal-select" id="mStatus">
+        <option value="confirmed">Confirmed</option>
+        <option value="pending">Pending</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Email (optional)</label>
+      <input class="modal-input" id="mEmail" type="email" placeholder="client@email.com">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Notes</label>
+      <textarea class="modal-textarea" id="mNotes" placeholder="Design preferences, references…"></textarea>
+    </div>
+
+    <div class="modal-actions">
+      <button class="modal-save" id="modalSaveBtn">Save Booking</button>
+      <button class="modal-delete" id="modalDeleteBtn" style="display:none">Delete</button>
+      <button class="modal-cancel" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<!-- EmailJS -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+<script src="js/firebase-config.js"></script>
+
+<script>
+// ── INIT ─────────────────────────────────────────
+let db, auth;
+
+if (window.firebaseConfig && window.firebaseConfig.apiKey !== 'YOUR_API_KEY') {
+  if (!firebase.apps.length) firebase.initializeApp(window.firebaseConfig);
+  db   = firebase.firestore();
+  auth = firebase.auth();
+
+  auth.onAuthStateChanged(user => {
+    if (user) showDashboard();
+    else showLogin();
   });
+} else {
+  // Demo mode — show dashboard without auth
+  showDashboard(true);
 }
 
-async function fetchAvailableSlots(date) {
-  const dateKey = formatDateKey(date);
-  const dow = date.getDay();
-  let rawSlots = DEFAULT_SCHEDULE[dow] || [];
+// ── REMEMBER ME ──────────────────────────────────
+(function() {
+  const saved = localStorage.getItem('np_saved_email');
+  if (saved) {
+    document.getElementById('loginEmail').value = saved;
+    document.getElementById('rememberMe').checked = true;
+  }
+})();
 
-  // If Firestore is ready, check for overrides and existing bookings
-  if (window._db) {
-    try {
-      // Check slot overrides
-      const overrideDoc = await window._db.collection('settings').doc('slots_' + dateKey).get();
-      if (overrideDoc.exists) {
-        rawSlots = overrideDoc.data().slots || [];
-      }
+// ── LOGIN ─────────────────────────────────────────
+document.getElementById('loginBtn').addEventListener('click', async () => {
+  const email  = document.getElementById('loginEmail').value.trim();
+  const pass   = document.getElementById('loginPass').value;
+  const remember = document.getElementById('rememberMe').checked;
+  document.getElementById('loginError').textContent = '';
 
-      // Get booked slots for this date
-      const bookingsSnap = await window._db
-        .collection('bookings')
-        .where('date', '==', dateKey)
-        .where('status', 'in', ['pending', 'confirmed'])
-        .get();
-
-      const bookedTimes = new Set(bookingsSnap.docs.map(d => d.data().time));
-
-      return rawSlots.map(time => ({ time, booked: bookedTimes.has(time) }));
-    } catch (e) {
-      console.warn('Firebase not configured yet, using default schedule', e);
-    }
+  if (remember) {
+    localStorage.setItem('np_saved_email', email);
+  } else {
+    localStorage.removeItem('np_saved_email');
   }
 
-  // Fallback: all slots available
-  return rawSlots.map(time => ({ time, booked: false }));
-}
-
-document.getElementById('prevMonth').addEventListener('click', () => {
-  calDate.setMonth(calDate.getMonth() - 1);
-  renderCalendar();
-});
-document.getElementById('nextMonth').addEventListener('click', () => {
-  calDate.setMonth(calDate.getMonth() + 1);
-  renderCalendar();
-});
-
-document.getElementById('nextStep2').addEventListener('click', () => goStep(3));
-
-// ── STEP 3: DETAILS ──────────────────────────────
-// Dynamic label for contact handle field
-// Contact method fixed to phone
-state.contactMethod = 'phone';
-
-function renderSummaryMini() {
-  const el = document.getElementById('bookingSummaryMini');
-  const servicesText = (state.services || [state.service]).filter(Boolean)
-    .map(s => `${s.name} (${s.price})`).join(' + ');
-  el.innerHTML = `
-    <strong>${servicesText}</strong><br>
-    ${state.date ? state.date.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}
-    at ${state.timeSlot || ''}
-    ${state.addons.length ? `<br>+ ${state.addons.join(', ')}` : ''}
-  `;
-}
-
-document.getElementById('nextStep3').addEventListener('click', () => {
-  const name = document.getElementById('clientName').value.trim();
-  const handle = document.getElementById('contactHandle').value.trim();
-
-  if (!name) {
-    document.getElementById('clientName').focus();
+  if (!auth) {
+    showDashboard(true);
     return;
   }
-  if (!handle) {
-    document.getElementById('contactHandle').focus();
+
+  try {
+    await auth.signInWithEmailAndPassword(email, pass);
+  } catch (e) {
+    document.getElementById('loginError').textContent = 'Incorrect email or password.';
+  }
+});
+
+document.getElementById('loginPass').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('loginBtn').click();
+});
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  if (auth) auth.signOut();
+  else showLogin();
+});
+
+// ── SCREENS ──────────────────────────────────────
+function showLogin() {
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('dashboard').style.display = 'none';
+}
+
+function showDashboard(demo = false) {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  if (demo) loadDemoData();
+  else loadBookings();
+}
+
+// ── TABS ─────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'vacation') loadBlockedDates();
+    if (btn.dataset.tab === 'calendar') initAdminCalendar();
+  });
+});
+
+// ── BOOKINGS ─────────────────────────────────────
+async function loadBookings() {
+  const list = document.getElementById('bookingList');
+
+  if (!db) { loadDemoData(); return; }
+
+  try {
+    const snap = await db.collection('bookings')
+      .orderBy('date', 'asc')
+      .get();
+
+    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderBookings(docs);
+    updateStats(docs);
+  } catch (e) {
+    list.innerHTML = '<div class="empty-state">Error loading bookings. Check Firestore rules.</div>';
+  }
+}
+
+function renderBookings(docs) {
+  const list = document.getElementById('bookingList');
+  const today = new Date().toISOString().split('T')[0];
+  const upcoming = docs.filter(d => d.date >= today && d.status !== 'cancelled');
+
+  if (upcoming.length === 0) {
+    list.innerHTML = '<div class="empty-state">No upcoming bookings 🤍</div>';
     return;
   }
 
-  state.name = name;
-  state.contactHandle = handle;
-  state.notes = document.getElementById('clientNotes').value.trim();
-  state.email = document.getElementById('clientEmail').value.trim();
-  state.contactMethod = 'phone';
-
-  goStep(4);
-});
-
-// ── STEP 4: REVIEW ───────────────────────────────
-function renderReview() {
-  const el = document.getElementById('bookingReview');
-  const contactLabel = { instagram: 'Instagram', kakaotalk: 'KakaoTalk', phone: 'Phone' };
-
-  let addonsHTML = '';
-  if (state.addons.length) {
-    addonsHTML = `<div class="review-row">
-      <span class="review-label">Add-ons</span>
-      <span class="review-val">${state.addons.join('<br>')}</span>
-    </div>`;
-  }
-
-  let notesHTML = '';
-  if (state.notes) {
-    notesHTML = `<div class="review-row">
-      <span class="review-label">Notes</span>
-      <span class="review-val">${state.notes}</span>
-    </div>`;
-  }
-
-  const services = (state.services?.length ? state.services : [state.service]).filter(Boolean);
-  const servicesHTML = services.map((s, i) => `
-    <div class="review-row">
-      <span class="review-label">${i === 0 ? 'Service' : '+'}</span>
-      <span class="review-val gold">${s.name} — ${s.price}</span>
+  list.innerHTML = upcoming.map(bk => `
+    <div class="booking-card status-${bk.status || 'pending'}" id="bk-${bk.id}">
+      <div>
+        <div class="bk-service">${bk.service || '—'}</div>
+        <div class="bk-datetime">
+          ${formatDisplayDate(bk.date)} · ${bk.time || '—'}
+        </div>
+        <div class="bk-client">
+          <strong>${bk.name || '—'}</strong><br>
+          ${bk.contactMethod || 'Instagram'}: ${bk.contactHandle || '—'}
+          ${bk.addons?.length ? `<br>+ ${bk.addons.join(', ')}` : ''}
+          ${bk.notes ? `<br><em style="color:var(--light)">${bk.notes}</em>` : ''}
+        </div>
+      </div>
+      <div class="bk-actions">
+        <span class="bk-status ${bk.status || 'pending'}">${bk.status || 'pending'}</span>
+        ${bk.status !== 'confirmed' ? `<button class="bk-btn confirm" onclick="updateBookingStatus('${bk.id}', 'confirmed')">Confirm</button>` : ''}
+        <button class="bk-btn cancel" onclick="updateBookingStatus('${bk.id}', 'cancelled')">Cancel</button>
+      </div>
     </div>
   `).join('');
-
-  el.innerHTML = `
-    ${servicesHTML}
-    ${addonsHTML}
-    <div class="review-row">
-      <span class="review-label">Date</span>
-      <span class="review-val">${state.date?.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
-    </div>
-    <div class="review-row">
-      <span class="review-label">Time</span>
-      <span class="review-val">${state.timeSlot}</span>
-    </div>
-    <div class="review-row">
-      <span class="review-label">Name</span>
-      <span class="review-val">${state.name}</span>
-    </div>
-    <div class="review-row">
-      <span class="review-label">${contactLabel[state.contactMethod]}</span>
-      <span class="review-val">${state.contactHandle}</span>
-    </div>
-    ${notesHTML}
-  `;
 }
 
-// ── STEP 4 → SUBMIT ──────────────────────────────
-document.getElementById('confirmBtn').addEventListener('click', submitBooking);
+async function updateBookingStatus(id, status) {
+  if (!db) { showToast('Firebase not configured'); return; }
+  try {
+    await db.collection('bookings').doc(id).update({ status });
 
-async function submitBooking() {
-  const btn = document.getElementById('confirmBtn');
-  btn.disabled = true;
-  btn.textContent = 'Sending…';
-
-  const dateKey = formatDateKey(state.date);
-
-  // ── Check for duplicate booking before saving ──
-  if (window._db) {
-    try {
-      const existing = await window._db.collection('bookings')
-        .where('date', '==', dateKey)
-        .where('time', '==', state.timeSlot)
-        .where('status', 'in', ['pending', 'confirmed'])
-        .get();
-
-      if (!existing.empty) {
-        btn.disabled = false;
-        btn.textContent = 'Confirm Booking ✓';
-        alert('Sorry, this time slot was just booked by someone else. Please go back and choose another time.');
-        goStep(2);
-        return;
-      }
-    } catch (e) {
-      console.warn('Duplicate check failed:', e);
+    // If confirming, send client confirmation email
+    if (status === 'confirmed') {
+      const snap = await db.collection('bookings').doc(id).get();
+      const bk = snap.data();
+      await sendClientConfirmation(bk);
+      showToast('✓ Booking confirmed & email sent');
+    } else {
+      showToast('Booking cancelled');
     }
+    loadBookings();
+  } catch (e) {
+    showToast('Error updating booking');
+  }
+}
+
+async function sendClientConfirmation(bk) {
+  if (!bk.email) return; // No client email — owner must contact manually
+  if (!window._EMAILJS_PUBLIC_KEY || window._EMAILJS_PUBLIC_KEY === 'YOUR_EMAILJS_PUBLIC_KEY') return;
+
+  try {
+    emailjs.init(window._EMAILJS_PUBLIC_KEY);
+    await emailjs.send(window._EMAILJS_SERVICE_ID, window._EMAILJS_TEMPLATE_CLIENT_ID, {
+      to_email:    bk.email,
+      client_name: bk.name,
+      service:     bk.service,
+      date:        formatDisplayDate(bk.date),
+      time:        bk.time,
+      contact:     `${bk.contactMethod}: ${bk.contactHandle}`,
+      addons:      bk.addons?.join(', ') || 'None'
+    });
+  } catch (e) {
+    console.warn('Client confirmation email failed:', e);
+  }
+}
+
+function updateStats(docs) {
+  const today = new Date().toISOString().split('T')[0];
+  const upcoming = docs.filter(d => d.date >= today);
+  document.getElementById('statPending').textContent   = upcoming.filter(d => d.status === 'pending').length;
+  document.getElementById('statConfirmed').textContent = upcoming.filter(d => d.status === 'confirmed').length;
+  document.getElementById('statTotal').textContent     = upcoming.filter(d => d.status !== 'cancelled').length;
+}
+
+// ── SLOT MANAGEMENT ───────────────────────────────
+let currentSlots = [];
+
+document.getElementById('loadSlotsBtn').addEventListener('click', async () => {
+  const dateVal = document.getElementById('slotDateInput').value;
+  if (!dateVal) return;
+
+  const dow = new Date(dateVal + 'T12:00:00').getDay();
+  const DEFAULT_SCHEDULE = {
+    0: ['3:00 PM','4:30 PM','6:00 PM'],
+    1: ['7:00 PM','8:00 PM'],
+    2: ['7:00 PM','8:00 PM'],
+    3: ['7:00 PM','8:00 PM'],
+    4: ['7:00 PM','8:00 PM'],
+    5: ['7:00 PM','8:00 PM'],
+    6: ['10:00 AM','11:30 AM','1:00 PM','2:30 PM','4:00 PM','5:30 PM','7:00 PM']
+  };
+
+  currentSlots = [...(DEFAULT_SCHEDULE[dow] || [])];
+
+  if (db) {
+    try {
+      const doc = await db.collection('settings').doc('slots_' + dateVal).get();
+      if (doc.exists) currentSlots = doc.data().slots || [];
+    } catch (e) {}
   }
 
-  const allServices = (state.services?.length ? state.services : [state.service]).filter(Boolean);
-  const booking = {
-    service: allServices.map(s => s.name).join(' + '),
-    price: allServices.map(s => s.price).join(' + '),
-    addons: state.addons,
-    date: dateKey,
-    time: state.timeSlot,
-    name: state.name,
-    contactMethod: state.contactMethod,
-    contactHandle: state.contactHandle,
-    notes: state.notes,
-    email: state.email,
-    status: 'pending',
+  document.getElementById('slotDateLabel').textContent = formatDisplayDate(dateVal);
+  document.getElementById('slotEditor').style.display = 'block';
+  renderSlots();
+});
+
+function renderSlots() {
+  const list = document.getElementById('slotList');
+  list.innerHTML = currentSlots.map(t => `
+    <div class="slot-chip">
+      ${t}
+      <span class="remove-slot" onclick="removeSlot('${t}')">×</span>
+    </div>
+  `).join('');
+}
+
+function removeSlot(time) {
+  currentSlots = currentSlots.filter(t => t !== time);
+  renderSlots();
+}
+
+document.getElementById('addSlotBtn').addEventListener('click', () => {
+  const t = document.getElementById('newSlotTime').value;
+  if (!t) return;
+  const [h, m] = t.split(':');
+  const hr = parseInt(h);
+  const ampm = hr >= 12 ? 'PM' : 'AM';
+  const h12 = hr === 0 ? 12 : hr > 12 ? hr - 12 : hr;
+  const formatted = `${h12}:${m} ${ampm}`;
+  if (!currentSlots.includes(formatted)) {
+    currentSlots.push(formatted);
+    currentSlots.sort();
+    renderSlots();
+  }
+});
+
+document.getElementById('saveSlotsBtn').addEventListener('click', async () => {
+  const dateVal = document.getElementById('slotDateInput').value;
+  if (!db) { showToast('Firebase not configured'); return; }
+  try {
+    await db.collection('settings').doc('slots_' + dateVal).set({ slots: currentSlots });
+    showToast('✓ Slots saved');
+  } catch (e) {
+    showToast('Error saving slots');
+  }
+});
+
+// ── VACATION ──────────────────────────────────────
+async function loadBlockedDates() {
+  if (!db) {
+    document.getElementById('blockedList').innerHTML = '<div style="font-size:12px;color:var(--light);font-style:italic">Firebase not configured</div>';
+    return;
+  }
+  try {
+    const doc = await db.collection('settings').doc('blocked_dates').get();
+    const blocked = doc.exists ? (doc.data().dates || []) : [];
+    renderBlockedDates(blocked);
+  } catch (e) {}
+}
+
+function renderBlockedDates(dates) {
+  const list = document.getElementById('blockedList');
+  if (!dates.length) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--light);font-style:italic">None blocked</div>';
+    return;
+  }
+  list.innerHTML = dates.map(d => `
+    <div class="blocked-chip">
+      ${formatDisplayDate(d)}
+      <span class="unblock" onclick="unblockDate('${d}')">×</span>
+    </div>
+  `).join('');
+}
+
+document.getElementById('blockVacBtn').addEventListener('click', async () => {
+  const from = document.getElementById('vacFrom').value;
+  const to   = document.getElementById('vacTo').value;
+  if (!from || !to) { showToast('Select both dates'); return; }
+  if (!db) { showToast('Firebase not configured'); return; }
+
+  const dates = [];
+  let cur = new Date(from + 'T12:00:00');
+  const end = new Date(to + 'T12:00:00');
+  while (cur <= end) {
+    dates.push(cur.toISOString().split('T')[0]);
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  try {
+    const doc = await db.collection('settings').doc('blocked_dates').get();
+    const existing = doc.exists ? (doc.data().dates || []) : [];
+    const merged = [...new Set([...existing, ...dates])].sort();
+    await db.collection('settings').doc('blocked_dates').set({ dates: merged });
+    showToast(`✓ Blocked ${dates.length} date(s)`);
+    loadBlockedDates();
+  } catch (e) {
+    showToast('Error blocking dates');
+  }
+});
+
+async function unblockDate(date) {
+  if (!db) return;
+  try {
+    const doc = await db.collection('settings').doc('blocked_dates').get();
+    const existing = doc.exists ? (doc.data().dates || []) : [];
+    const updated = existing.filter(d => d !== date);
+    await db.collection('settings').doc('blocked_dates').set({ dates: updated });
+    showToast('✓ Date unblocked');
+    loadBlockedDates();
+  } catch (e) {}
+}
+
+// ── BOOKING MODAL ────────────────────────────────
+let modalEditId = null;    // null = new booking, string = editing existing
+let modalDateKey = null;   // date pre-filled when opening from calendar day
+
+function openAddModal(dateKey) {
+  modalEditId = null;
+  modalDateKey = dateKey;
+  document.getElementById('modalTitle').textContent = 'New Booking';
+  document.getElementById('mName').value = '';
+  document.getElementById('mPhone').value = '';
+  document.getElementById('mService').value = '';
+  document.getElementById('mDate').value = dateKey || '';
+  document.getElementById('mTime').value = '';
+  document.getElementById('mStatus').value = 'confirmed';
+  document.getElementById('mEmail').value = '';
+  document.getElementById('mNotes').value = '';
+  document.getElementById('modalDeleteBtn').style.display = 'none';
+  document.getElementById('bookingModal').classList.add('open');
+}
+
+function openEditModal(bk) {
+  modalEditId = bk.id;
+  modalDateKey = bk.date;
+  document.getElementById('modalTitle').textContent = 'Edit Booking';
+  document.getElementById('mName').value = bk.name || '';
+  document.getElementById('mPhone').value = bk.contactHandle || '';
+  document.getElementById('mService').value = bk.service || '';
+  document.getElementById('mDate').value = bk.date || '';
+  document.getElementById('mTime').value = bk.time || '';
+  document.getElementById('mStatus').value = bk.status || 'confirmed';
+  document.getElementById('mEmail').value = bk.email || '';
+  document.getElementById('mNotes').value = bk.notes || '';
+  document.getElementById('modalDeleteBtn').style.display = 'inline-block';
+  document.getElementById('bookingModal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('bookingModal').classList.remove('open');
+  modalEditId = null;
+}
+
+// Close modal on overlay click
+document.getElementById('bookingModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+document.getElementById('modalSaveBtn').addEventListener('click', async () => {
+  const name    = document.getElementById('mName').value.trim();
+  const phone   = document.getElementById('mPhone').value.trim();
+  const service = document.getElementById('mService').value;
+  const date    = document.getElementById('mDate').value;
+  const time    = document.getElementById('mTime').value;
+  const status  = document.getElementById('mStatus').value;
+  const email   = document.getElementById('mEmail').value.trim();
+  const notes   = document.getElementById('mNotes').value.trim();
+
+  if (!name || !date || !time) {
+    showToast('Name, date and time are required');
+    return;
+  }
+
+  const data = {
+    name, service, date, time, status, notes, email,
+    contactMethod: 'phone',
+    contactHandle: phone,
+    price: '',
+    addons: [],
     createdAt: new Date().toISOString()
   };
 
-  let bookingId = null;
+  if (!db) { showToast('Firebase not configured'); return; }
 
-  // 1. Save to Firestore
-  if (window._db) {
-    try {
-      const ref = await window._db.collection('bookings').add(booking);
-      bookingId = ref.id;
-    } catch (e) {
-      console.warn('Firestore write failed:', e);
+  try {
+    if (modalEditId) {
+      await db.collection('bookings').doc(modalEditId).update(data);
+      showToast('✓ Booking updated');
+    } else {
+      await db.collection('bookings').add(data);
+      showToast('✓ Booking added');
     }
-  }
-
-  // 2. Send email to owner with confirm/decline links
-  if (window._EMAILJS_SERVICE_ID && window._EMAILJS_TEMPLATE_ID &&
-      window._EMAILJS_PUBLIC_KEY !== 'YOUR_EMAILJS_PUBLIC_KEY') {
-    try {
-      const baseUrl = window.location.origin + window.location.pathname.replace('index.html','');
-      const confirmLink = bookingId
-        ? `${baseUrl}action.html?id=${bookingId}&action=confirm`
-        : `${baseUrl}admin.html`;
-      const declineLink = bookingId
-        ? `${baseUrl}action.html?id=${bookingId}&action=decline`
-        : `${baseUrl}admin.html`;
-
-      await emailjs.send(window._EMAILJS_SERVICE_ID, window._EMAILJS_TEMPLATE_ID, {
-        to_name:      'nailpalette.syd',
-        client_name:  state.name,
-        service:      booking.service,
-        date:         state.date?.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
-        time:         state.timeSlot,
-        contact:      `${state.contactMethod}: ${state.contactHandle}`,
-        notes:        state.notes || 'None',
-        addons:       state.addons.join(', ') || 'None',
-        confirm_link: confirmLink,
-        decline_link: declineLink
-      });
-    } catch (e) {
-      console.warn('EmailJS send failed:', e);
-    }
-  }
-
-  showSuccess(booking);
-}
-
-function showSuccess(booking) {
-  const detail = document.getElementById('successDetail');
-  detail.innerHTML = `
-    <strong>${booking.service}</strong><br>
-    ${state.date?.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })} at ${booking.time}
-    ${booking.addons.length ? `<br>+ ${booking.addons.join(', ')}` : ''}
-    <br>Total: ${booking.price}
-    <br><br>
-    <em style="font-size:12px;color:#9A8F94">We'll reach you via ${booking.contactMethod}: ${booking.contactHandle}</em>
-  `;
-  goStep(5);
-}
-
-// ── HELPERS ──────────────────────────────────────
-function formatDateKey(date) {
-  if (!date) return '';
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-// ── FIREBASE INIT ────────────────────────────────
-// firebase-config.js runs first and sets window.firebaseConfig
-// This runs after DOM load
-document.addEventListener('DOMContentLoaded', () => {
-  renderCalendar();
-
-  if (window.firebaseConfig && window.firebaseConfig.apiKey && window.firebaseConfig.apiKey !== 'YOUR_API_KEY') {
-    try {
-      if (!firebase.apps.length) firebase.initializeApp(window.firebaseConfig);
-      window._db = firebase.firestore();
-      console.log('✓ Firebase connected');
-      // Load vacation blocked dates so they show as unavailable on the calendar
-      loadBlockedDatesForBooking();
-    } catch (e) {
-      console.warn('Firebase init failed:', e);
-    }
-  } else {
-    console.info('ℹ Firebase not configured yet — running in demo mode');
+    closeModal();
+    calInitialized = false;
+    await fetchCalBookings();
+    renderAdminCalendar();
+    // Re-open the day panel for that date
+    const bks = adminCalBookings[date] || [];
+    // find the day element and trigger showCalDay
+    setTimeout(() => {
+      const grid = document.getElementById('adminCalGrid');
+      const dayNum = parseInt(date.split('-')[2]);
+      const firstDay = new Date(adminCalDate.getFullYear(), adminCalDate.getMonth(), 1).getDay();
+      const idx = firstDay + dayNum - 1;
+      const el = grid.children[idx];
+      if (el) showCalDay(date, adminCalBookings[date] || [], el);
+    }, 100);
+    loadBookings();
+  } catch (e) {
+    showToast('Error saving booking: ' + e.message);
   }
 });
 
-async function loadBlockedDatesForBooking() {
+document.getElementById('modalDeleteBtn').addEventListener('click', async () => {
+  if (!modalEditId) return;
+  if (!confirm('Delete this booking permanently?')) return;
+  if (!db) { showToast('Firebase not configured'); return; }
   try {
-    const doc = await window._db.collection('settings').doc('blocked_dates').get();
-    if (doc.exists) {
-      const dates = doc.data().dates || [];
-      blockedDates = new Set(dates);
-      renderCalendar(); // Re-render calendar with blocked dates applied
-    }
+    await db.collection('bookings').doc(modalEditId).delete();
+    showToast('Booking deleted');
+    closeModal();
+    calInitialized = false;
+    await fetchCalBookings();
+    renderAdminCalendar();
+    document.getElementById('calDayPanel').style.display = 'none';
+    loadBookings();
   } catch (e) {
-    console.warn('Could not load blocked dates:', e);
+    showToast('Error deleting booking');
+  }
+});
+
+// ── DRAG & DROP ───────────────────────────────────
+let dragBookingId   = null;
+let dragBookingData = null;
+
+function startDrag(e, bkId, bkData) {
+  dragBookingId   = bkId;
+  dragBookingData = bkData;
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+// ── ADMIN CALENDAR ───────────────────────────────
+const CAL_MONTHS = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+const CAL_DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+let adminCalDate = new Date();
+let adminCalBookings = {};   // { 'YYYY-MM-DD': [booking, ...] }
+let calInitialized = false;
+
+async function initAdminCalendar() {
+  if (!calInitialized) {
+    calInitialized = true;
+    await fetchCalBookings();
+  }
+  renderAdminCalendar();
+}
+
+async function fetchCalBookings() {
+  adminCalBookings = {};
+  if (!db) {
+    // Demo mode
+    adminCalBookings = {
+      '2026-07-05': [{ name:'Jessica', service:'Simple Nail Art', time:'7:00 PM', status:'pending' }],
+      '2026-07-06': [{ name:'Minji', service:'French / Ombre', time:'10:00 AM', status:'confirmed' }],
+      '2026-07-12': [{ name:'Sarah', service:'Solid Colour', time:'2:30 PM', status:'pending' }]
+    };
+    return;
+  }
+  try {
+    const snap = await db.collection('bookings')
+      .where('status', 'in', ['pending', 'confirmed'])
+      .get();
+    snap.docs.forEach(d => {
+      const bk = { id: d.id, ...d.data() };
+      if (!adminCalBookings[bk.date]) adminCalBookings[bk.date] = [];
+      adminCalBookings[bk.date].push(bk);
+    });
+  } catch (e) {
+    console.warn('Calendar fetch failed:', e);
   }
 }
+
+function renderAdminCalendar() {
+  const year  = adminCalDate.getFullYear();
+  const month = adminCalDate.getMonth();
+  document.getElementById('adminCalTitle').textContent = `${CAL_MONTHS[month]} ${year}`;
+
+  const firstDay   = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayKey   = new Date().toISOString().split('T')[0];
+
+  const grid = document.getElementById('adminCalGrid');
+  grid.innerHTML = '';
+
+  for (let i = 0; i < firstDay; i++) {
+    const el = document.createElement('div');
+    el.className = 'admin-cal-day';
+    grid.appendChild(el);
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateKey = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const bks = adminCalBookings[dateKey] || [];
+    const isPast = dateKey < todayKey;
+    const el  = document.createElement('div');
+    el.className = 'admin-cal-day clickable'
+      + (dateKey === todayKey ? ' today-day' : '')
+      + (isPast ? ' past-day' : '');
+    el.dataset.dateKey = dateKey;
+
+    const numEl = document.createElement('div');
+    numEl.className = 'acd-num';
+    numEl.textContent = d;
+    el.appendChild(numEl);
+
+    if (bks.length > 0) {
+      el.classList.add('has-bookings');
+      bks.forEach(bk => {
+        const dot = document.createElement('div');
+        dot.className = 'acd-dot ' + (bk.status === 'confirmed' ? 'dot-confirmed' : 'dot-pending');
+        dot.textContent = bk.time + ' ' + (bk.name || '');
+        if (bk.id) {
+          dot.draggable = true;
+          dot.addEventListener('dragstart', e => { e.stopPropagation(); startDrag(e, bk.id, bk); });
+        }
+        el.appendChild(dot);
+      });
+    }
+
+    // All future/today days: click → show day panel
+    el.addEventListener('click', () => showCalDay(dateKey, adminCalBookings[dateKey] || [], el));
+
+    // Drag-and-drop: drop target
+    el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drag-over'); });
+    el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+    el.addEventListener('drop', async e => {
+      e.preventDefault();
+      el.classList.remove('drag-over');
+      if (!dragBookingId || !db) return;
+      const newDate = el.dataset.dateKey;
+      if (newDate === dragBookingData.date) return;
+      try {
+        await db.collection('bookings').doc(dragBookingId).update({ date: newDate });
+        showToast('✓ Moved to ' + formatDisplayDate(newDate));
+        dragBookingId = null;
+        calInitialized = false;
+        await fetchCalBookings();
+        renderAdminCalendar();
+        showCalDay(newDate, adminCalBookings[newDate] || [], document.querySelector(`[data-date-key="${newDate}"]`) || el);
+        loadBookings();
+      } catch (err) {
+        showToast('Move failed');
+      }
+    });
+
+    grid.appendChild(el);
+  }
+
+  // Hide day panel on month change
+  document.getElementById('calDayPanel').style.display = 'none';
+}
+
+function showCalDay(dateKey, bks, el) {
+  // Highlight selected day
+  document.querySelectorAll('.admin-cal-day').forEach(d => d.classList.remove('selected-day'));
+  if (el) el.classList.add('selected-day');
+
+  const d = new Date(dateKey + 'T12:00:00');
+  document.getElementById('calDayTitle').textContent =
+    d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  // Wire up "Add Booking" button for this date
+  document.getElementById('calAddBtn').onclick = () => openAddModal(dateKey);
+
+  const panel = document.getElementById('calDayBookings');
+  if (!bks.length) {
+    panel.innerHTML = '<div class="cal-day-empty">No bookings — tap + Add Booking to create one</div>';
+  } else {
+    panel.innerHTML = bks.map(bk => `
+      <div class="booking-card status-${bk.status || 'pending'}" id="bk-cal-${bk.id || ''}">
+        <div>
+          <div class="bk-service">${bk.service || '—'}</div>
+          <div class="bk-datetime">${bk.time || '—'}</div>
+          <div class="bk-client">
+            <strong>${bk.name || '—'}</strong><br>
+            Phone: ${bk.contactHandle || '—'}
+            ${bk.notes ? `<br><em style="color:var(--light)">${bk.notes}</em>` : ''}
+          </div>
+        </div>
+        <div class="bk-actions">
+          <span class="bk-status ${bk.status || 'pending'}">${bk.status || 'pending'}</span>
+          ${bk.id ? `<button class="bk-btn confirm" onclick='openEditModal(${JSON.stringify(bk)})'>Edit</button>` : ''}
+          ${bk.id && bk.status !== 'confirmed' ? `<button class="bk-btn confirm" onclick="updateBookingStatus('${bk.id}','confirmed')">Confirm</button>` : ''}
+          ${bk.id ? `<button class="bk-btn cancel" onclick="updateBookingStatus('${bk.id}','cancelled')">Cancel</button>` : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+  document.getElementById('calDayPanel').style.display = 'block';
+  document.getElementById('calDayPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+document.getElementById('calPrev').addEventListener('click', () => {
+  adminCalDate.setMonth(adminCalDate.getMonth() - 1);
+  renderAdminCalendar();
+});
+document.getElementById('calNext').addEventListener('click', () => {
+  adminCalDate.setMonth(adminCalDate.getMonth() + 1);
+  renderAdminCalendar();
+});
+
+// ── DEMO DATA ─────────────────────────────────────
+function loadDemoData() {
+  const demoBks = [
+    { id: 'demo1', service: 'Simple Nail Art', price: 'from $65', date: '2026-07-05', time: '7:00 PM', name: 'Jessica', contactMethod: 'instagram', contactHandle: '@jess.nails', addons: ['Cat Eye Effect +$10'], notes: 'Cat eye galaxy theme', status: 'pending' },
+    { id: 'demo2', service: 'French / Ombre Gel Manicure', price: '$65', date: '2026-07-06', time: '10:00 AM', name: 'Minji', contactMethod: 'kakaotalk', contactHandle: 'minji_k', addons: [], notes: '', status: 'confirmed' },
+    { id: 'demo3', service: 'Solid Colour Gel Manicure', price: '$50', date: '2026-07-12', time: '2:30 PM', name: 'Sarah', contactMethod: 'instagram', contactHandle: '@sarah.sydney', addons: ['Gel Removal +$20'], notes: 'Remove old gel first', status: 'pending' }
+  ];
+  renderBookings(demoBks);
+  updateStats(demoBks);
+}
+
+// ── HELPERS ──────────────────────────────────────
+function formatDisplayDate(dateKey) {
+  if (!dateKey) return '';
+  const d = new Date(dateKey + 'T12:00:00');
+  return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>
