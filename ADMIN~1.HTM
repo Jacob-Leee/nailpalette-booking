@@ -143,6 +143,8 @@ body {
 .admin-brand em { color: var(--gold); font-style: italic; }
 
 .admin-actions { display: flex; gap: 10px; align-items: center; }
+.btn-text-short { display: none; }
+.btn-text-full  { display: inline; }
 
 .btn-sm {
   padding: 7px 14px;
@@ -502,6 +504,8 @@ body {
   color: var(--gold);
   font-weight: 700;
 }
+.admin-cal-day.past-day { opacity: 0.35; }
+.admin-cal-day.past-day .acd-dot { filter: grayscale(0.6); }
 .acd-num {
   font-size: 11px;
   color: var(--light);
@@ -548,7 +552,8 @@ body {
   /* ── 헤더 ── */
   .admin-header { padding: 12px 14px; }
   .admin-brand { font-size: 18px; }
-  .admin-actions .btn-sm:first-child { display: none; } /* "View Booking Page" 숨김 */
+  .btn-text-full { display: none; }
+  .btn-text-short { display: inline; }
 
   /* ── 바디 ── */
   .admin-body { padding: 14px 10px 80px; }
@@ -832,6 +837,12 @@ body {
     <label class="login-label">Password</label>
     <input class="login-input" type="password" id="loginPass" placeholder="••••••••">
 
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer;text-align:left">
+      <input type="checkbox" id="rememberMe" style="
+        width:16px;height:16px;accent-color:var(--gold);cursor:pointer;flex-shrink:0">
+      <span style="font-size:11px;color:var(--light);letter-spacing:1px">Remember me</span>
+    </label>
+
     <button class="login-btn" id="loginBtn">Sign In →</button>
     <div class="login-error" id="loginError"></div>
 
@@ -846,7 +857,7 @@ body {
   <header class="admin-header">
     <div class="admin-brand">nail<em>palette</em></div>
     <div class="admin-actions">
-      <a href="index.html" class="btn-sm">View Booking Page</a>
+      <a href="index.html" class="btn-sm" id="viewBookingBtn"><span class="btn-text-full">View Booking Page</span><span class="btn-text-short">↗ Booking</span></a>
       <button class="btn-sm" id="logoutBtn">Sign Out</button>
     </div>
   </header>
@@ -1071,14 +1082,29 @@ if (window.firebaseConfig && window.firebaseConfig.apiKey !== 'YOUR_API_KEY') {
   showDashboard(true);
 }
 
+// ── REMEMBER ME ──────────────────────────────────
+(function() {
+  const saved = localStorage.getItem('np_saved_email');
+  if (saved) {
+    document.getElementById('loginEmail').value = saved;
+    document.getElementById('rememberMe').checked = true;
+  }
+})();
+
 // ── LOGIN ─────────────────────────────────────────
 document.getElementById('loginBtn').addEventListener('click', async () => {
-  const email = document.getElementById('loginEmail').value.trim();
-  const pass  = document.getElementById('loginPass').value;
+  const email  = document.getElementById('loginEmail').value.trim();
+  const pass   = document.getElementById('loginPass').value;
+  const remember = document.getElementById('rememberMe').checked;
   document.getElementById('loginError').textContent = '';
 
+  if (remember) {
+    localStorage.setItem('np_saved_email', email);
+  } else {
+    localStorage.removeItem('np_saved_email');
+  }
+
   if (!auth) {
-    // Demo mode
     showDashboard(true);
     return;
   }
@@ -1553,8 +1579,11 @@ function renderAdminCalendar() {
   for (let d = 1; d <= daysInMonth; d++) {
     const dateKey = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const bks = adminCalBookings[dateKey] || [];
+    const isPast = dateKey < todayKey;
     const el  = document.createElement('div');
-    el.className = 'admin-cal-day clickable' + (dateKey === todayKey ? ' today-day' : '');
+    el.className = 'admin-cal-day clickable'
+      + (dateKey === todayKey ? ' today-day' : '')
+      + (isPast ? ' past-day' : '');
     el.dataset.dateKey = dateKey;
 
     const numEl = document.createElement('div');
