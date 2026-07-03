@@ -255,14 +255,15 @@ body {
   border: 0.5px solid var(--border);
   border-radius: 10px;
   cursor: pointer;
-  font-size: 13px;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 15px;
   color: var(--dark);
   transition: background 0.2s;
   background: rgba(237,236,234,0.5);
 }
 .addon-item:hover { background: rgba(122,140,94,0.06); }
-.addon-item input[type="checkbox"] { accent-color: var(--sage); width: 15px; height: 15px; }
-.addon-item span { margin-left: auto; font-size: 12px; color: var(--sage); font-weight: 500; }
+.addon-item input[type="checkbox"] { accent-color: var(--sage); width: 15px; height: 15px; flex-shrink: 0; }
+.addon-item span { margin-left: auto; font-family: 'Cormorant Garamond', Georgia, serif; font-size: 15px; color: var(--sage); font-weight: 500; }
 
 /* ── STEP NOTE ── */
 .step-note {
