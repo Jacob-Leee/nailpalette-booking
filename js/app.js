@@ -240,7 +240,7 @@ async function fetchAvailableSlots(date) {
       // Each booking: { time, duration (minutes) }
       const bookedBookings = bookingsSnap.docs.map(d => ({
         time: d.data().time,
-        duration: parseInt(d.data().duration) || 60  // fallback 60 min for legacy bookings
+        duration: parseInt(d.data().duration) || 120  // fallback 120 min (all services = 2hr)
       }));
 
       return rawSlots.map(slotTime => {
