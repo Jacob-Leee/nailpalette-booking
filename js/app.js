@@ -219,7 +219,7 @@ async function fetchAvailableSlots(date) {
 
   // Current user's total service duration in minutes
   const currentDuration = (state.services || [])
-    .reduce((sum, s) => sum + parseInt(s.duration || 60), 0) || 60;
+    .reduce((sum, s) => sum + parseInt(s.duration || 120), 0) || 120;
 
   // If Firestore is ready, check for overrides and existing bookings
   if (window._db) {
