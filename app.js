@@ -217,6 +217,10 @@ async function fetchAvailableSlots(date) {
   const dow = date.getDay();
   let rawSlots = DEFAULT_SCHEDULE[dow] || [];
 
+  // Current user's total service duration in minutes
+  const currentDuration = (state.services || [])
+    .reduce((sum, s) => sum + parseInt(s.duration || 120), 0) || 120;
+
   // If Firestore is ready, check for overrides and existing bookings
   if (window._db) {
     try {
@@ -233,9 +237,33 @@ async function fetchAvailableSlots(date) {
         .where('status', 'in', ['pending', 'confirmed'])
         .get();
 
-      const bookedTimes = new Set(bookingsSnap.docs.map(d => d.data().time));
+      // Each booking: { time, duration (minutes) }
+      const bookedBookings = bookingsSnap.docs.map(d => ({
+        time: d.data().time,
+        duration: parseInt(d.data().duration) || 120  // fallback 120 min (all services = 2hr)
+      }));
 
-      return rawSlots.map(time => ({ time, booked: bookedTimes.has(time) }));
+      return rawSlots.map(slotTime => {
+        const slotMin = parseTimeToMinutes(slotTime);
+
+        const isBlocked = bookedBookings.some(b => {
+          const bStart = parseTimeToMinutes(b.time);
+          const bEnd   = bStart + b.duration;
+
+          // 1) This slot falls inside an existing booking's window
+          //    e.g. existing 7pm+90min → 8pm slot is blocked
+          if (slotMin >= bStart && slotMin < bEnd) return true;
+
+          // 2) A new booking at this slot (with current user's duration)
+          //    would run into an existing booking
+          //    e.g. new 6pm+90min vs existing 7pm → 6pm is blocked
+          if (slotMin < bStart && slotMin + currentDuration > bStart) return true;
+
+          return false;
+        });
+
+        return { time: slotTime, booked: isBlocked };
+      });
     } catch (e) {
       console.warn('Firebase not configured yet, using default schedule', e);
     }
@@ -379,9 +407,11 @@ async function submitBooking() {
   }
 
   const allServices = (state.services?.length ? state.services : [state.service]).filter(Boolean);
+  const totalDuration = allServices.reduce((sum, s) => sum + parseInt(s.duration || 60), 0);
   const booking = {
     service: allServices.map(s => s.name).join(' + '),
     price: allServices.map(s => s.price).join(' + '),
+    duration: totalDuration,   // minutes — used to auto-block following slots
     addons: state.addons,
     date: dateKey,
     time: state.timeSlot,
@@ -460,6 +490,17 @@ function formatDateKey(date) {
   return `${y}-${m}-${d}`;
 }
 
+// Convert "7:00 PM" / "11:30 AM" → total minutes from midnight
+function parseTimeToMinutes(timeStr) {
+  if (!timeStr) return 0;
+  const [time, period] = timeStr.trim().split(' ');
+  const [h, m] = time.split(':').map(Number);
+  let hours = h;
+  if (period === 'PM' && h !== 12) hours += 12;
+  if (period === 'AM' && h === 12) hours = 0;
+  return hours * 60 + (m || 0);
+}
+
 // ── FIREBASE INIT ────────────────────────────────
 // firebase-config.js runs first and sets window.firebaseConfig
 // This runs after DOM load
@@ -471,6 +512,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!firebase.apps.length) firebase.initializeApp(window.firebaseConfig);
       window._db = firebase.firestore();
       console.log('✓ Firebase connected');
+      // Load vacation blocked dates so they show as unavailable on the calendar
+      loadBlockedDatesForBooking();
     } catch (e) {
       console.warn('Firebase init failed:', e);
     }
@@ -478,3 +521,16 @@ document.addEventListener('DOMContentLoaded', () => {
     console.info('ℹ Firebase not configured yet — running in demo mode');
   }
 });
+
+async function loadBlockedDatesForBooking() {
+  try {
+    const doc = await window._db.collection('settings').doc('blocked_dates').get();
+    if (doc.exists) {
+      const dates = doc.data().dates || [];
+      blockedDates = new Set(dates);
+      renderCalendar(); // Re-render calendar with blocked dates applied
+    }
+  } catch (e) {
+    console.warn('Could not load blocked dates:', e);
+  }
+}
