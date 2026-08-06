@@ -552,7 +552,7 @@ body {
   border-radius: 12px;
   background: rgba(237,236,234,0.8);
   font-family: 'Raleway', sans-serif;
-  font-size: 14px;
+  font-size: 16px; /* 16px minimum prevents iOS Safari auto-zoom on focus */
   color: var(--dark);
   outline: none;
   transition: border-color 0.2s;
