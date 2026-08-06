@@ -112,6 +112,8 @@ today.setHours(0,0,0,0);
 let blockedDates = new Set();
 // Individual slot overrides from Firestore { "YYYY-MM-DD": ["10:00 AM", ...] or [] (block all) }
 let slotOverrides = {};
+// Dates where all available slots are already booked
+let fullyBookedDates = new Set();
 
 function renderCalendar() {
   const year = calDate.getFullYear();
@@ -144,7 +146,9 @@ function renderCalendar() {
 
     if (date.getTime() === today.getTime()) el.classList.add('today');
 
-    if (isPast || isBlocked || !hasSlots) {
+    const isFullyBooked = fullyBookedDates.has(dateKey);
+
+    if (isPast || isBlocked || !hasSlots || isFullyBooked) {
       el.classList.add(isPast ? 'past' : 'unavailable');
     } else {
       el.classList.add('available');
@@ -273,12 +277,14 @@ async function fetchAvailableSlots(date) {
   return rawSlots.map(time => ({ time, booked: false }));
 }
 
-document.getElementById('prevMonth').addEventListener('click', () => {
+document.getElementById('prevMonth').addEventListener('click', async () => {
   calDate.setMonth(calDate.getMonth() - 1);
+  await checkFullyBookedDays();
   renderCalendar();
 });
-document.getElementById('nextMonth').addEventListener('click', () => {
+document.getElementById('nextMonth').addEventListener('click', async () => {
   calDate.setMonth(calDate.getMonth() + 1);
+  await checkFullyBookedDays();
   renderCalendar();
 });
 
@@ -526,11 +532,60 @@ async function loadBlockedDatesForBooking() {
   try {
     const doc = await window._db.collection('settings').doc('blocked_dates').get();
     if (doc.exists) {
-      const dates = doc.data().dates || [];
-      blockedDates = new Set(dates);
-      renderCalendar(); // Re-render calendar with blocked dates applied
+      blockedDates = new Set(doc.data().dates || []);
     }
   } catch (e) {
     console.warn('Could not load blocked dates:', e);
+  }
+  await checkFullyBookedDays();
+  renderCalendar();
+}
+
+// Check which days in the visible month are fully booked (all default slots taken)
+async function checkFullyBookedDays() {
+  if (!window._db) return;
+  const year  = calDate.getFullYear();
+  const month = calDate.getMonth();
+  const firstDay = `${year}-${String(month + 1).padStart(2,'0')}-01`;
+  const lastDay  = `${year}-${String(month + 1).padStart(2,'0')}-${String(new Date(year, month + 1, 0).getDate()).padStart(2,'0')}`;
+
+  try {
+    const snap = await window._db.collection('bookings')
+      .where('status', 'in', ['pending', 'confirmed'])
+      .get();
+
+    // Group bookings by date (current month only)
+    const bookingsByDate = {};
+    snap.docs.forEach(d => {
+      const bk = d.data();
+      if (bk.date >= firstDay && bk.date <= lastDay) {
+        if (!bookingsByDate[bk.date]) bookingsByDate[bk.date] = [];
+        bookingsByDate[bk.date].push({
+          time: bk.time,
+          duration: parseInt(bk.duration) || 120
+        });
+      }
+    });
+
+    // For each date with bookings, check if all default slots are blocked
+    fullyBookedDates = new Set();
+    Object.entries(bookingsByDate).forEach(([dateKey, bookings]) => {
+      const dow = new Date(dateKey + 'T12:00:00').getDay();
+      const slots = DEFAULT_SCHEDULE[dow] || [];
+      if (!slots.length) return;
+
+      const allBlocked = slots.every(slotTime => {
+        const slotMin = parseTimeToMinutes(slotTime);
+        return bookings.some(b => {
+          const bStart = parseTimeToMinutes(b.time);
+          const bEnd   = bStart + b.duration;
+          return slotMin >= bStart && slotMin < bEnd;
+        });
+      });
+
+      if (allBlocked) fullyBookedDates.add(dateKey);
+    });
+  } catch (e) {
+    console.warn('Could not check fully booked days:', e);
   }
 }
