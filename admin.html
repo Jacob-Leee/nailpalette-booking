@@ -878,7 +878,7 @@ body {
       </div>
       <div class="stat-card">
         <div class="stat-num" id="statTotal">—</div>
-        <div class="stat-label">Total</div>
+        <div class="stat-label">All Time</div>
       </div>
     </div>
 
@@ -1206,6 +1206,11 @@ function renderBookings(docs) {
 
 async function updateBookingStatus(id, status) {
   if (!db) { showToast('Firebase not configured'); return; }
+
+  // Confirm before actioning
+  const label = status === 'confirmed' ? 'confirm' : 'cancel';
+  if (!confirm(`Are you sure you want to ${label} this booking?`)) return;
+
   try {
     await db.collection('bookings').doc(id).update({ status });
 
