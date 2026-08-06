@@ -5,14 +5,15 @@
 
 const CACHE_NAME = 'nailpalette-v3';
 
-// Files to cache for offline use
+// Files to cache — use scope as base so paths work on GitHub Pages subfolders
+const BASE = self.registration ? self.registration.scope : '/';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/css/style.css',
-  '/js/app.js',
-  '/js/firebase-config.js',
-  '/manifest.json'
+  BASE,
+  BASE + 'index.html',
+  BASE + 'css/style.css',
+  BASE + 'js/app.js',
+  BASE + 'js/firebase-config.js',
+  BASE + 'manifest.json'
 ];
 
 // ── INSTALL: cache static assets ─────────────────

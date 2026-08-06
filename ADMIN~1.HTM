@@ -969,7 +969,7 @@ body {
             <div class="cal-legend-dot" style="background:rgba(138,176,196,0.4)"></div>Pending
           </div>
           <div class="cal-legend-item">
-            <div class="cal-legend-dot" style="background:rgba(196,168,98,0.4)"></div>Confirmed
+            <div class="cal-legend-dot" style="background:rgba(122,140,94,0.5)"></div>Confirmed
           </div>
         </div>
       </div>
@@ -1013,7 +1013,7 @@ body {
     </div>
     <div class="modal-field">
       <label class="modal-label">Date *</label>
-      <input class="modal-input" id="mDate" type="date" style="color-scheme:dark">
+      <input class="modal-input" id="mDate" type="date" style="color-scheme:light">
     </div>
     <div class="modal-field">
       <label class="modal-label">Time *</label>
@@ -1249,7 +1249,7 @@ function updateStats(docs) {
   const upcoming = docs.filter(d => d.date >= today);
   document.getElementById('statPending').textContent   = upcoming.filter(d => d.status === 'pending').length;
   document.getElementById('statConfirmed').textContent = upcoming.filter(d => d.status === 'confirmed').length;
-  document.getElementById('statTotal').textContent     = upcoming.filter(d => d.status !== 'cancelled').length;
+  document.getElementById('statTotal').textContent     = docs.filter(d => d.status !== 'cancelled').length; // all-time total
 }
 
 // ── SLOT MANAGEMENT ───────────────────────────────
@@ -1457,6 +1457,7 @@ document.getElementById('modalSaveBtn').addEventListener('click', async () => {
     contactHandle: phone,
     price: '',
     addons: [],
+    duration: 120,   // 2hr default — used by booking page slot-blocking logic
     createdAt: new Date().toISOString()
   };
 

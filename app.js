@@ -178,7 +178,7 @@ function loadTimeSlots(date) {
 
   wrap.style.display = 'none';
   noSlots.style.display = 'none';
-  loading.style.display = 'flex';
+  loading.style.display = 'block';
 
   dateLabel.textContent = date.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
 
