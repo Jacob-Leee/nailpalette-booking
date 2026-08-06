@@ -1,13 +1,19 @@
 {
-  "name": "nailpalette.syd — Book Now",
-  "short_name": "nailpalette",
-  "description": "Book your gel nail appointment with nailpalette.syd in Carlingford, Sydney",
-  "start_url": "./index.html",
+  "name": "nailpalette.syd — Admin",
+  "short_name": "np Admin",
+  "description": "Admin dashboard for nailpalette.syd",
+  "start_url": "./admin.html",
   "display": "standalone",
   "background_color": "#F5F4EF",
   "theme_color": "#7A8C5E",
   "orientation": "portrait",
   "icons": [
+    {
+      "src": "apple-touch-icon-admin.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
     {
       "src": "icon-192.png",
       "sizes": "192x192",
