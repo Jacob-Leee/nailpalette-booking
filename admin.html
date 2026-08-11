@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#F5F4EF">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-admin.png">
-<link rel="manifest" href="manifest-admin.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="np Admin">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>nailpalette.syd — Admin</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Raleway:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -1649,6 +1651,8 @@ function renderAdminCalendar() {
 }
 
 function showCalDay(dateKey, bks, el) {
+  // Sort by time (earliest first)
+  bks = [...bks].sort((a, b) => parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time));
   // Highlight selected day
   document.querySelectorAll('.admin-cal-day').forEach(d => d.classList.remove('selected-day'));
   if (el) el.classList.add('selected-day');
@@ -1709,6 +1713,16 @@ function loadDemoData() {
 }
 
 // ── HELPERS ──────────────────────────────────────
+function parseTimeToMinutes(timeStr) {
+  if (!timeStr) return 0;
+  const [time, period] = timeStr.trim().split(' ');
+  const [h, m] = time.split(':').map(Number);
+  let hours = h;
+  if (period === 'PM' && h !== 12) hours += 12;
+  if (period === 'AM' && h === 12) hours = 0;
+  return hours * 60 + (m || 0);
+}
+
 function formatDisplayDate(dateKey) {
   if (!dateKey) return '';
   const d = new Date(dateKey + 'T12:00:00');
