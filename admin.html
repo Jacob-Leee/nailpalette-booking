@@ -1022,18 +1022,7 @@ body {
     <div class="modal-field">
       <label class="modal-label">Time *</label>
       <select class="modal-select" id="mTime">
-        <option value="">— Select time —</option>
-        <option>7:00 PM</option>
-        <option>8:00 PM</option>
-        <option>10:00 AM</option>
-        <option>11:30 AM</option>
-        <option>1:00 PM</option>
-        <option>2:30 PM</option>
-        <option>3:00 PM</option>
-        <option>4:00 PM</option>
-        <option>4:30 PM</option>
-        <option>5:30 PM</option>
-        <option>6:00 PM</option>
+        <option value="">Select date first…</option>
       </select>
     </div>
     <div class="modal-field">
@@ -1403,7 +1392,79 @@ async function unblockDate(date) {
 let modalEditId = null;    // null = new booking, string = editing existing
 let modalDateKey = null;   // date pre-filled when opening from calendar day
 
-function openAddModal(dateKey) {
+// Generate 30-min time slots from startHour to endHour (24h)
+function generate30MinSlots(startHour = 9, endHour = 22) {
+  const slots = [];
+  for (let min = startHour * 60; min < endHour * 60; min += 30) {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    const period = h >= 12 ? 'PM' : 'AM';
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    slots.push(`${h12}:${m === 0 ? '00' : m} ${period}`);
+  }
+  return slots;
+}
+
+// Populate #mTime with 30-min slots, disabling times that conflict with
+// existing bookings (90 min buffer before start + after end).
+// excludeBookingId: skip this booking's own time when editing.
+async function populateAdminTimeSelect(dateKey, excludeBookingId = null) {
+  const select = document.getElementById('mTime');
+  const prevVal = select.value;
+  select.innerHTML = '<option value="">Select time…</option>';
+
+  if (!dateKey) {
+    select.innerHTML = '<option value="">Select date first…</option>';
+    return;
+  }
+
+  // Fetch existing bookings for this date
+  let existingBookings = [];
+  if (db) {
+    try {
+      const snap = await db.collection('bookings')
+        .where('date', '==', dateKey)
+        .where('status', 'in', ['pending', 'confirmed'])
+        .get();
+      existingBookings = snap.docs
+        .filter(d => d.id !== excludeBookingId)
+        .map(d => ({
+          time:     d.data().time,
+          duration: parseInt(d.data().duration) || 120
+        }));
+    } catch (e) {
+      console.warn('Could not fetch bookings for time check', e);
+    }
+  }
+
+  const BUFFER      = 90;   // minutes buffer before/after each booking
+  const NEW_DURATION = 120; // assume 2-hr service for admin manual bookings
+
+  generate30MinSlots(9, 22).forEach(slotTime => {
+    const slotMin = parseTimeToMinutes(slotTime);
+
+    // Slot is blocked if it falls within 90 min of any existing booking's window
+    const isBlocked = existingBookings.some(b => {
+      const bStart = parseTimeToMinutes(b.time);
+      const bEnd   = bStart + (parseInt(b.duration) || 120);
+      // Available only if new booking ends (+ buffer) before bStart,
+      // OR new booking starts (after buffer) after bEnd.
+      return !(slotMin + NEW_DURATION + BUFFER <= bStart || slotMin >= bEnd + BUFFER);
+    });
+
+    const opt = document.createElement('option');
+    opt.value = slotTime;
+    opt.textContent = isBlocked ? `${slotTime}  ✕` : slotTime;
+    opt.disabled = isBlocked;
+    if (isBlocked) opt.style.color = 'var(--light)';
+    select.appendChild(opt);
+  });
+
+  // Restore previous selection if still valid
+  if (prevVal) select.value = prevVal;
+}
+
+async function openAddModal(dateKey) {
   modalEditId = null;
   modalDateKey = dateKey;
   document.getElementById('modalTitle').textContent = 'New Booking';
@@ -1411,15 +1472,15 @@ function openAddModal(dateKey) {
   document.getElementById('mPhone').value = '';
   document.getElementById('mService').value = '';
   document.getElementById('mDate').value = dateKey || '';
-  document.getElementById('mTime').value = '';
   document.getElementById('mStatus').value = 'confirmed';
   document.getElementById('mEmail').value = '';
   document.getElementById('mNotes').value = '';
   document.getElementById('modalDeleteBtn').style.display = 'none';
+  await populateAdminTimeSelect(dateKey);
   document.getElementById('bookingModal').classList.add('open');
 }
 
-function openEditModal(bk) {
+async function openEditModal(bk) {
   modalEditId = bk.id;
   modalDateKey = bk.date;
   document.getElementById('modalTitle').textContent = 'Edit Booking';
@@ -1427,11 +1488,12 @@ function openEditModal(bk) {
   document.getElementById('mPhone').value = bk.contactHandle || '';
   document.getElementById('mService').value = bk.service || '';
   document.getElementById('mDate').value = bk.date || '';
-  document.getElementById('mTime').value = bk.time || '';
   document.getElementById('mStatus').value = bk.status || 'confirmed';
   document.getElementById('mEmail').value = bk.email || '';
   document.getElementById('mNotes').value = bk.notes || '';
   document.getElementById('modalDeleteBtn').style.display = 'inline-block';
+  await populateAdminTimeSelect(bk.date, bk.id);
+  document.getElementById('mTime').value = bk.time || '';
   document.getElementById('bookingModal').classList.add('open');
 }
 
@@ -1439,6 +1501,11 @@ function closeModal() {
   document.getElementById('bookingModal').classList.remove('open');
   modalEditId = null;
 }
+
+// Refresh available times when admin changes the date in the modal
+document.getElementById('mDate').addEventListener('change', async function() {
+  await populateAdminTimeSelect(this.value, modalEditId);
+});
 
 // Close modal on overlay click
 document.getElementById('bookingModal').addEventListener('click', function(e) {
