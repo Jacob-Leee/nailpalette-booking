@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#F5F4EF">
+<title>nailpalette.syd — Book Now</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Raleway:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #F5F4EF;
+  --surface: #EDECEA;
+  --sage:    #7A8C5E;
+  --sage-lt: #B5C49A;
+  --dark:    #2E3028;
+  --mid:     #5E5F52;
+  --light:   #9A9B8A;
+  --border:  rgba(122,140,94,0.22);
+  --radius:  16px;
+}
+
+body {
+  font-family: 'Raleway', sans-serif;
+  background: var(--bg);
+  color: var(--dark);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── HEADER ── */
+.site-header {
+  text-align: center;
+  padding: 28px 20px 16px;
+}
+.brand {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: 3px;
+  color: var(--dark);
+}
+.brand em  { color: var(--sage); font-style: italic; }
+.brand-sub {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 3.5px;
+  text-transform: uppercase;
+  color: var(--light);
+  margin-top: 4px;
+}
+
+/* ── MAIN ── */
+.main-wrap {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 0 16px 60px;
+}
+
+/* ── SECTION CARD ── */
+.section-card {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 14px;
+}
+
+/* ── CALENDAR ── */
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.cal-month {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 20px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  color: var(--dark);
+}
+.cal-nav {
+  background: none;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  font-size: 18px;
+  color: var(--sage);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.cal-nav:hover { background: rgba(122,140,94,0.1); }
+
+.cal-days-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  margin-bottom: 6px;
+}
+.cal-days-header span {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--light);
+  padding: 4px 0;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.cal-day {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 10px;
+  cursor: default;
+  transition: all 0.15s;
+  user-select: none;
+}
+.cal-day.empty    { }
+.cal-day.past,
+.cal-day.unavailable { color: var(--light); opacity: 0.45; }
+.cal-day.today    { font-weight: 700; color: var(--sage); }
+.cal-day.available {
+  cursor: pointer;
+  color: var(--dark);
+}
+.cal-day.available:hover {
+  background: rgba(122,140,94,0.15);
+}
+.cal-day.selected {
+  background: var(--sage);
+  color: #fff !important;
+  font-weight: 600;
+}
+
+/* ── TIME SLOTS ── */
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--light);
+  margin-bottom: 12px;
+}
+.date-heading {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 18px;
+  color: var(--dark);
+  margin-bottom: 14px;
+}
+.time-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.time-btn {
+  padding: 9px 16px;
+  border: 0.5px solid var(--border);
+  border-radius: 50px;
+  background: var(--bg);
+  color: var(--dark);
+  font-family: 'Raleway', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.time-btn:hover:not(:disabled) { border-color: var(--sage); color: var(--sage); }
+.time-btn.selected {
+  background: var(--sage);
+  border-color: var(--sage);
+  color: #fff;
+}
+.time-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+.loading-msg, .no-slots-msg {
+  font-size: 13px;
+  color: var(--light);
+  font-style: italic;
+  padding: 8px 0;
+}
+
+/* ── FORM ── */
+.booking-summary {
+  background: rgba(122,140,94,0.1);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--sage);
+  font-weight: 600;
+  margin-bottom: 18px;
+  letter-spacing: 0.3px;
+}
+.field-group {
+  margin-bottom: 14px;
+}
+.field-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--light);
+  margin-bottom: 6px;
+}
+.field-input {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  color: var(--dark);
+  font-family: 'Raleway', sans-serif;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.field-input:focus { border-color: rgba(122,140,94,0.55); }
+
+/* Contact method toggle */
+.contact-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.contact-pill {
+  flex: 1;
+  padding: 9px;
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  font-family: 'Raleway', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--light);
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s;
+}
+.contact-pill.active {
+  border-color: var(--sage);
+  color: var(--sage);
+  background: rgba(122,140,94,0.08);
+}
+
+/* ── POLICY NOTE ── */
+.policy-note {
+  font-size: 12px;
+  color: var(--light);
+  line-height: 1.9;
+  border-top: 0.5px solid var(--border);
+  padding-top: 14px;
+  margin-bottom: 14px;
+}
+
+/* ── BOOK BUTTON ── */
+.btn-book {
+  width: 100%;
+  padding: 16px;
+  background: var(--sage);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-family: 'Raleway', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  margin-top: 6px;
+}
+.btn-book:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-book:not(:disabled):hover { opacity: 0.88; }
+
+/* ── SUCCESS ── */
+.success-wrap {
+  text-align: center;
+  padding: 30px 10px;
+}
+.success-icon  { font-size: 44px; margin-bottom: 14px; }
+.success-title {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 28px;
+  font-weight: 400;
+  margin-bottom: 10px;
+  color: var(--dark);
+}
+.success-detail {
+  background: rgba(122,140,94,0.1);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 14px;
+  color: var(--sage);
+  font-weight: 600;
+  margin: 14px 0;
+}
+.success-msg  { font-size: 13px; color: var(--mid); line-height: 1.6; margin-bottom: 20px; }
+.success-contact { font-size: 13px; color: var(--mid); line-height: 2.2; }
+.success-contact a { color: var(--sage); text-decoration: none; }
+
+/* ── FOOTER ── */
+.site-footer {
+  text-align: center;
+  padding: 20px;
+  font-size: 11px;
+  color: var(--light);
+}
+.site-footer a { color: var(--light); text-decoration: none; }
+
+/* ── HIDDEN ── */
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="site-header">
+  <div class="brand">nail<em>palette</em><span>.syd</span></div>
+  <div class="brand-sub">Gel Nail Technician · Carlingford</div>
+</header>
+
+<main class="main-wrap" id="mainWrap">
+
+  <!-- CALENDAR -->
+  <div class="section-card" id="calCard">
+    <div class="cal-header">
+      <button class="cal-nav" id="prevMonth">‹</button>
+      <span class="cal-month" id="calMonth"></span>
+      <button class="cal-nav" id="nextMonth">›</button>
+    </div>
+    <div class="cal-days-header">
+      <span>Sun</span><span>Mon</span><span>Tue</span>
+      <span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+  </div>
+
+  <!-- TIME SLOTS -->
+  <div class="section-card hidden" id="timeCard">
+    <div class="section-label">Available Times</div>
+    <div class="date-heading" id="dateHeading"></div>
+    <div id="timeContent">
+      <div class="loading-msg">Loading…</div>
+    </div>
+  </div>
+
+  <!-- BOOKING FORM -->
+  <div class="section-card hidden" id="formCard">
+    <div class="booking-summary" id="bookingSummary"></div>
+
+    <div class="field-group">
+      <label class="field-label">Your Name *</label>
+      <input class="field-input" id="clientName" type="text" placeholder="e.g. Sarah" autocomplete="name">
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Contact (optional)</label>
+      <div class="contact-toggle">
+        <button class="contact-pill active" id="pillInsta" onclick="setContact('instagram')">📸 Instagram</button>
+        <button class="contact-pill" id="pillPhone" onclick="setContact('phone')">📱 Phone</button>
+      </div>
+      <input class="field-input" id="contactHandle" type="text" placeholder="@your_instagram" autocomplete="off">
+    </div>
+
+    <div class="policy-note">
+      📍 1:1 private · Carlingford, Sydney<br>
+      · Exact address sent after confirmation<br>
+      · 48hr cancellation notice appreciated<br>
+      · Price confirmed at consultation
+    </div>
+
+    <button class="btn-book" id="bookBtn" disabled>Request Booking →</button>
+  </div>
+
+  <!-- SUCCESS -->
+  <div class="section-card hidden" id="successCard">
+    <div class="success-wrap">
+      <div class="success-icon">🤍</div>
+      <h2 class="success-title">Booking Requested!</h2>
+      <div class="success-detail" id="successDetail"></div>
+      <p class="success-msg">Your request has been sent to <strong>nailpalette.syd</strong>.<br>We'll confirm shortly via your contact method.</p>
+      <div class="success-contact">
+        <div>📸 <a href="https://instagram.com/nailpalette.syd" target="_blank">@nailpalette.syd</a></div>
+        <div>💬 KakaoTalk: Nailpalette_syd</div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer class="site-footer">
+  <div>© nailpalette.syd · Carlingford, Sydney</div>
+  <div style="margin-top:6px"><a href="admin.html">Admin</a></div>
+</footer>
+
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+
+<script>
+/* ══════════════════════════════════════════════
+   nailpalette.syd — Single Page Booking
+   ══════════════════════════════════════════════ */
+
+// ── SCHEDULE ─────────────────────────────────
+// Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6, Sun=0
+const DEFAULT_SCHEDULE = {
+  0: ['3:00 PM', '4:30 PM', '6:00 PM'],
+  1: ['7:00 PM', '8:00 PM'],
+  2: ['7:00 PM', '8:00 PM'],
+  3: ['7:00 PM', '8:00 PM'],
+  4: ['7:00 PM', '8:00 PM'],
+  5: ['7:00 PM', '8:00 PM'],
+  6: ['10:00 AM', '11:30 AM', '1:00 PM', '2:30 PM', '4:00 PM', '5:30 PM', '7:00 PM']
+};
+
+// ── STATE ────────────────────────────────────
+let state = {
+  date:          null,   // JS Date
+  dateKey:       null,   // "YYYY-MM-DD"
+  timeSlot:      null,   // "10:00 AM"
+  contactMethod: 'instagram'
+};
+
+let blockedDates     = new Set();
+let fullyBookedDates = new Set();
+
+// ── HELPERS ──────────────────────────────────
+function parseTimeToMinutes(t) {
+  if (!t) return 0;
+  const [time, period] = t.trim().split(' ');
+  const [h, m] = time.split(':').map(Number);
+  let hrs = h;
+  if (period === 'PM' && h !== 12) hrs += 12;
+  if (period === 'AM' && h === 12) hrs = 0;
+  return hrs * 60 + (m || 0);
+}
+
+function formatDateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function formatDisplayDate(dateKey) {
+  const d = new Date(dateKey + 'T12:00:00');
+  return d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+function scrollTo(el) {
+  setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+}
+
+// ── CALENDAR ─────────────────────────────────
+let calDate = new Date();
+calDate.setDate(1);
+
+const MONTHS = ['January','February','March','April','May','June',
+                'July','August','September','October','November','December'];
+const today = new Date();
+today.setHours(0,0,0,0);
+
+function renderCalendar() {
+  const year = calDate.getFullYear();
+  const month = calDate.getMonth();
+  document.getElementById('calMonth').textContent = `${MONTHS[month]} ${year}`;
+
+  const firstDay    = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const grid = document.getElementById('calGrid');
+  grid.innerHTML = '';
+
+  for (let i = 0; i < firstDay; i++) {
+    const el = document.createElement('div');
+    el.className = 'cal-day empty';
+    grid.appendChild(el);
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(year, month, d);
+    const el   = document.createElement('div');
+    el.className = 'cal-day';
+    el.textContent = d;
+
+    const isPast        = date < today;
+    const dateKey       = formatDateKey(date);
+    const isBlocked     = blockedDates.has(dateKey);
+    const isFullyBooked = fullyBookedDates.has(dateKey);
+    const dow           = date.getDay();
+    const hasSlots      = DEFAULT_SCHEDULE[dow] && DEFAULT_SCHEDULE[dow].length > 0;
+
+    if (date.getTime() === today.getTime()) el.classList.add('today');
+
+    if (isPast || isBlocked || !hasSlots || isFullyBooked) {
+      el.classList.add(isPast ? 'past' : 'unavailable');
+    } else {
+      el.classList.add('available');
+      el.addEventListener('click', () => selectDate(date, dateKey, el));
+    }
+
+    if (state.dateKey === dateKey) el.classList.add('selected');
+    grid.appendChild(el);
+  }
+}
+
+document.getElementById('prevMonth').addEventListener('click', async () => {
+  calDate.setMonth(calDate.getMonth() - 1);
+  await checkFullyBookedDays();
+  renderCalendar();
+});
+document.getElementById('nextMonth').addEventListener('click', async () => {
+  calDate.setMonth(calDate.getMonth() + 1);
+  await checkFullyBookedDays();
+  renderCalendar();
+});
+
+// ── DATE SELECTION ───────────────────────────
+function selectDate(date, dateKey, el) {
+  document.querySelectorAll('.cal-day.selected').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+
+  state.date    = date;
+  state.dateKey = dateKey;
+  state.timeSlot = null;
+
+  // Reset downstream
+  document.getElementById('formCard').classList.add('hidden');
+  document.getElementById('successCard').classList.add('hidden');
+
+  // Show time card
+  const timeCard = document.getElementById('timeCard');
+  timeCard.classList.remove('hidden');
+  document.getElementById('dateHeading').textContent = formatDisplayDate(dateKey);
+  document.getElementById('timeContent').innerHTML = '<div class="loading-msg">Loading…</div>';
+  scrollTo(timeCard);
+
+  loadTimeSlots(date, dateKey);
+}
+
+// ── TIME SLOTS ───────────────────────────────
+async function loadTimeSlots(date, dateKey) {
+  const slots = await fetchAvailableSlots(date, dateKey);
+  const content = document.getElementById('timeContent');
+
+  if (!slots || slots.length === 0) {
+    content.innerHTML = '<div class="no-slots-msg">No available times for this day. Please choose another date.</div>';
+    return;
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'time-grid';
+
+  slots.forEach(slot => {
+    const btn = document.createElement('button');
+    btn.className = 'time-btn';
+    btn.textContent = slot.time;
+    btn.disabled = slot.booked;
+    if (!slot.booked) {
+      btn.addEventListener('click', () => selectTime(slot.time, btn));
+    }
+    grid.appendChild(btn);
+  });
+
+  content.innerHTML = '';
+  content.appendChild(grid);
+}
+
+async function fetchAvailableSlots(date, dateKey) {
+  const dow = date.getDay();
+  let rawSlots = DEFAULT_SCHEDULE[dow] || [];
+
+  if (window._db) {
+    try {
+      const overrideDoc = await window._db.collection('settings').doc('slots_' + dateKey).get();
+      if (overrideDoc.exists) rawSlots = overrideDoc.data().slots || [];
+
+      const snap = await window._db.collection('bookings')
+        .where('date', '==', dateKey)
+        .where('status', 'in', ['pending', 'confirmed'])
+        .get();
+
+      const booked = snap.docs.map(d => ({
+        time:     d.data().time,
+        duration: parseInt(d.data().duration) || 120
+      }));
+
+      const DURATION = 120; // default service duration
+      return rawSlots.map(slotTime => {
+        const slotMin = parseTimeToMinutes(slotTime);
+        const isBlocked = booked.some(b => {
+          const bStart = parseTimeToMinutes(b.time);
+          const bEnd   = bStart + b.duration;
+          if (slotMin >= bStart && slotMin < bEnd) return true;
+          if (slotMin < bStart && slotMin + DURATION > bStart) return true;
+          return false;
+        });
+        return { time: slotTime, booked: isBlocked };
+      });
+    } catch (e) {
+      console.warn('Firebase error, using defaults', e);
+    }
+  }
+
+  return rawSlots.map(time => ({ time, booked: false }));
+}
+
+// ── TIME SELECTION ───────────────────────────
+function selectTime(time, btn) {
+  document.querySelectorAll('.time-btn.selected').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  state.timeSlot = time;
+
+  // Show form
+  const formCard = document.getElementById('formCard');
+  formCard.classList.remove('hidden');
+  document.getElementById('bookingSummary').textContent =
+    `📅 ${formatDisplayDate(state.dateKey)}  ·  ⏰ ${time}`;
+  updateBookBtn();
+  scrollTo(formCard);
+}
+
+// ── CONTACT TOGGLE ───────────────────────────
+function setContact(method) {
+  state.contactMethod = method;
+  document.getElementById('pillInsta').classList.toggle('active', method === 'instagram');
+  document.getElementById('pillPhone').classList.toggle('active', method === 'phone');
+  const handle = document.getElementById('contactHandle');
+  handle.placeholder = method === 'instagram' ? '@your_instagram' : '04xx xxx xxx';
+  handle.value = '';
+  updateBookBtn();
+}
+
+// ── FORM VALIDATION ──────────────────────────
+function updateBookBtn() {
+  const name = document.getElementById('clientName').value.trim();
+  document.getElementById('bookBtn').disabled = !(name && state.timeSlot);
+}
+document.getElementById('clientName').addEventListener('input', updateBookBtn);
+document.getElementById('contactHandle').addEventListener('input', updateBookBtn);
+
+// ── SUBMIT BOOKING ───────────────────────────
+document.getElementById('bookBtn').addEventListener('click', async () => {
+  const name   = document.getElementById('clientName').value.trim();
+  const handle = document.getElementById('contactHandle').value.trim();
+  const btn    = document.getElementById('bookBtn');
+
+  if (!name || !handle || !state.timeSlot) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+
+  const data = {
+    name,
+    date:          state.dateKey,
+    time:          state.timeSlot,
+    contactMethod: state.contactMethod,
+    contactHandle: handle,
+    service:       '',
+    status:        'pending',
+    duration:      120,
+    addons:        [],
+    notes:         '',
+    email:         '',
+    createdAt:     new Date().toISOString()
+  };
+
+  if (window._db) {
+    try {
+      await window._db.collection('bookings').add(data);
+    } catch (e) {
+      console.warn('Could not save to Firestore', e);
+    }
+  }
+
+  // Show success
+  document.getElementById('calCard').classList.add('hidden');
+  document.getElementById('timeCard').classList.add('hidden');
+  document.getElementById('formCard').classList.add('hidden');
+  const successCard = document.getElementById('successCard');
+  successCard.classList.remove('hidden');
+  document.getElementById('successDetail').textContent =
+    `${formatDisplayDate(state.dateKey)}  ·  ${state.timeSlot}`;
+  scrollTo(successCard);
+});
+
+// ── FULLY BOOKED DAYS ────────────────────────
+async function checkFullyBookedDays() {
+  if (!window._db) return;
+  const year  = calDate.getFullYear();
+  const month = calDate.getMonth();
+  const firstDay = `${year}-${String(month+1).padStart(2,'0')}-01`;
+  const lastDay  = `${year}-${String(month+1).padStart(2,'0')}-${String(new Date(year, month+1, 0).getDate()).padStart(2,'0')}`;
+
+  try {
+    const snap = await window._db.collection('bookings')
+      .where('status', 'in', ['pending', 'confirmed'])
+      .get();
+
+    const byDate = {};
+    snap.docs.forEach(d => {
+      const bk = d.data();
+      if (bk.date >= firstDay && bk.date <= lastDay) {
+        if (!byDate[bk.date]) byDate[bk.date] = [];
+        byDate[bk.date].push({ time: bk.time, duration: parseInt(bk.duration) || 120 });
+      }
+    });
+
+    fullyBookedDates = new Set();
+    Object.entries(byDate).forEach(([dk, bks]) => {
+      const dow   = new Date(dk + 'T12:00:00').getDay();
+      const slots = DEFAULT_SCHEDULE[dow] || [];
+      if (!slots.length) return;
+      const allBlocked = slots.every(slotTime => {
+        const slotMin = parseTimeToMinutes(slotTime);
+        return bks.some(b => {
+          const bStart = parseTimeToMinutes(b.time);
+          const bEnd   = bStart + b.duration;
+          return slotMin >= bStart && slotMin < bEnd;
+        });
+      });
+      if (allBlocked) fullyBookedDates.add(dk);
+    });
+  } catch (e) {
+    console.warn('Could not check fully booked days', e);
+  }
+}
+
+// ── INIT ─────────────────────────────────────
+async function init() {
+  // Load blocked vacation dates
+  if (window._db) {
+    try {
+      const doc = await window._db.collection('settings').doc('blocked_dates').get();
+      if (doc.exists) blockedDates = new Set(doc.data().dates || []);
+    } catch (e) {}
+  }
+  await checkFullyBookedDays();
+  renderCalendar();
+}
+
+// Wait for Firebase
+const initInterval = setInterval(() => {
+  if (window._db !== undefined) {
+    clearInterval(initInterval);
+    init();
+  }
+}, 100);
+// Fallback: render even without Firebase
+setTimeout(() => {
+  clearInterval(initInterval);
+  if (!state.dateKey) init();
+}, 3000);
+</script>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+</script>
+</body>
+</html>
