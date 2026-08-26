@@ -421,6 +421,25 @@ body {
    nailpalette.syd — Single Page Booking
    ══════════════════════════════════════════════ */
 
+// ── FIREBASE INIT ─────────────────────────────
+// firebase-config.js only sets window.firebaseConfig — we init here
+(function() {
+  try {
+    if (window.firebaseConfig && typeof firebase !== 'undefined') {
+      // Avoid double-init if admin.html already initialised on same page
+      const app = firebase.apps.length
+        ? firebase.app()
+        : firebase.initializeApp(window.firebaseConfig);
+      window._db = firebase.firestore();
+    } else {
+      window._db = null;
+    }
+  } catch (e) {
+    console.warn('Firebase init failed', e);
+    window._db = null;
+  }
+})();
+
 // ── SCHEDULE ─────────────────────────────────
 // Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6, Sun=0
 const DEFAULT_SCHEDULE = {
@@ -755,18 +774,8 @@ async function init() {
   renderCalendar();
 }
 
-// Wait for Firebase
-const initInterval = setInterval(() => {
-  if (window._db !== undefined) {
-    clearInterval(initInterval);
-    init();
-  }
-}, 100);
-// Fallback: render even without Firebase
-setTimeout(() => {
-  clearInterval(initInterval);
-  if (!state.dateKey) init();
-}, 3000);
+// _db is now set synchronously above — just run init
+init();
 </script>
 
 <script>
