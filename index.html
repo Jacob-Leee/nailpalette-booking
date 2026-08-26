@@ -463,13 +463,13 @@ console.log('[nailpalette] build', APP_VERSION);
 // [firstBookingStart, lastBookingStart] — slots generated every 30 min.
 // Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6, Sun=0
 const SCHEDULE_WINDOWS = {
-  0: [15,   18],    // Sunday    3:00 PM – 6:00 PM
-  1: [18.5, 20.5],  // Monday    6:30 PM – 8:30 PM
-  2: [18.5, 20.5],  // Tuesday   6:30 PM – 8:30 PM
-  3: [18.5, 20.5],  // Wednesday 6:30 PM – 8:30 PM
-  4: [18.5, 20.5],  // Thursday  6:30 PM – 8:30 PM
-  5: [18.5, 20.5],  // Friday    6:30 PM – 8:30 PM
-  6: [10,   19]     // Saturday 10:00 AM – 7:00 PM
+  0: [15,   20],    // Sunday    3:00 PM – 8:00 PM
+  1: [18.5, 20],    // Monday    6:30 PM – 8:00 PM
+  2: [18.5, 20],    // Tuesday   6:30 PM – 8:00 PM
+  3: [18.5, 20],    // Wednesday 6:30 PM – 8:00 PM
+  4: [18.5, 20],    // Thursday  6:30 PM – 8:00 PM
+  5: [18.5, 20],    // Friday    6:30 PM – 8:00 PM
+  6: [10,   20]     // Saturday 10:00 AM – 8:00 PM
 };
 
 function minutesToLabel(min) {
@@ -524,6 +524,14 @@ const SERVICE_DURATION = 120;
 // Single source of truth for "is this slot unavailable?".
 // Used by BOTH the time-slot list and the fully-booked calendar check,
 // so the two can never disagree.
+// True if this slot has already passed (only relevant for today)
+function isSlotInPast(slotTime, dateKey) {
+  const now = new Date();
+  if (dateKey !== formatDateKey(now)) return false;
+  const LEAD_MINUTES = 60;   // need at least an hour's notice
+  return parseTimeToMinutes(slotTime) <= now.getHours() * 60 + now.getMinutes() + LEAD_MINUTES;
+}
+
 function isSlotBlocked(slotTime, bookings) {
   const slotMin = parseTimeToMinutes(slotTime);
   return bookings.some(b => {
@@ -691,7 +699,7 @@ async function fetchAvailableSlots(date, dateKey) {
 
       return rawSlots.map(slotTime => ({
         time:   slotTime,
-        booked: isSlotBlocked(slotTime, booked)
+        booked: isSlotBlocked(slotTime, booked) || isSlotInPast(slotTime, dateKey)
       }));
     } catch (e) {
       console.error('[nailpalette] Firestore query failed — showing all slots as open:', e);
@@ -700,7 +708,7 @@ async function fetchAvailableSlots(date, dateKey) {
     console.error('[nailpalette] window._db is not set — Firebase did not initialise.');
   }
 
-  return rawSlots.map(time => ({ time, booked: false }));
+  return rawSlots.map(time => ({ time, booked: isSlotInPast(time, dateKey) }));
 }
 
 // ── TIME SELECTION ───────────────────────────
@@ -765,12 +773,39 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
     createdAt:     new Date().toISOString()
   };
 
-  if (window._db) {
-    try {
-      await window._db.collection('bookings').add(data);
-    } catch (e) {
-      console.warn('Could not save to Firestore', e);
+  if (!window._db) {
+    alert('Sorry — the booking system is offline right now.\nPlease message @nailpalette.syd on Instagram instead.');
+    btn.disabled = false;
+    btn.textContent = 'Request Booking →';
+    return;
+  }
+
+  try {
+    // Re-check availability at submit time so two people can't grab
+    // the same slot while both have the page open
+    const fresh = await window._db.collection('bookings')
+      .where('date', '==', state.dateKey)
+      .get();
+    const taken = fresh.docs
+      .map(d => d.data())
+      .filter(b => b.status === 'pending' || b.status === 'confirmed')
+      .map(b => ({ time: b.time, duration: parseInt(b.duration) || SERVICE_DURATION }));
+
+    if (isSlotBlocked(state.timeSlot, taken)) {
+      alert('Sorry — that time was just taken. Please pick another slot.');
+      btn.disabled = false;
+      btn.textContent = 'Request Booking →';
+      await loadTimeSlots(state.date, state.dateKey);   // refresh the grid
+      return;
     }
+
+    await window._db.collection('bookings').add(data);
+  } catch (e) {
+    console.error('[nailpalette] Booking save failed:', e);
+    alert('Sorry — your booking could not be saved.\nPlease try again, or message @nailpalette.syd on Instagram.');
+    btn.disabled = false;
+    btn.textContent = 'Request Booking →';
+    return;
   }
 
   // Show success
