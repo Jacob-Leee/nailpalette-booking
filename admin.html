@@ -25,6 +25,10 @@
   --border:   rgba(122,140,94,0.22);
 }
 
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;   /* nothing may scroll the page sideways */
+}
 body {
   font-family: 'Raleway', sans-serif;
   background: var(--bg);
@@ -465,10 +469,12 @@ body {
 }
 .admin-cal-days-header {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  /* minmax(0,1fr) lets columns shrink below their content width */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   text-align: center;
   margin-bottom: 4px;
 }
+.admin-cal-days-header span { min-width: 0; overflow: hidden; }
 .admin-cal-days-header span {
   font-size: 9px;
   letter-spacing: 0.5px;
@@ -478,10 +484,13 @@ body {
 }
 .admin-cal-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  /* minmax(0,1fr) prevents booking chips from forcing the grid wider than the screen */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 2px;
 }
 .admin-cal-day {
+  min-width: 0;
+  overflow: hidden;
   min-height: 52px;
   border-radius: 8px;
   padding: 5px 4px;
@@ -530,6 +539,8 @@ body {
   display: block;
   max-width: 100%;
 }
+/* Desktop shows "7:00 PM Name"; mobile swaps to compact "7p" */
+.acd-time-short { display: none; }
 .acd-dot.dot-pending   { background: rgba(122,163,184,0.22); color: #5A8EA8; }
 .acd-dot.dot-confirmed { background: rgba(122,140,94,0.22);  color: var(--sage); }
 .acd-dot[draggable="true"] { cursor: grab; }
@@ -608,7 +619,16 @@ body {
   .admin-cal-days-header span { font-size: 8px; letter-spacing: 0; }
   .admin-cal-day { min-height: 44px; padding: 4px 3px; border-radius: 6px; }
   .acd-num { font-size: 10px; }
-  .acd-dot { font-size: 7px; padding: 1px 3px; border-radius: 2px; }
+  .acd-dot {
+    font-size: 8px;
+    padding: 1px 2px;
+    border-radius: 2px;
+    text-align: center;
+    font-weight: 600;
+  }
+  /* Swap full label for the compact time so it fits a ~48px column */
+  .acd-time-full  { display: none; }
+  .acd-time-short { display: inline; }
   .btn-sm { padding: 7px 12px; font-size: 10px; }
 
   /* ── 날짜 패널 ── */
@@ -1180,23 +1200,23 @@ function renderBookings(docs) {
   }
 
   list.innerHTML = upcoming.map(bk => `
-    <div class="booking-card status-${bk.status || 'pending'}" id="bk-${bk.id}">
+    <div class="booking-card status-${esc(bk.status || 'pending')}" id="bk-${esc(bk.id)}">
       <div>
-        <div class="bk-service">${bk.service || '—'}</div>
+        <div class="bk-service">${esc(bk.service) || '—'}</div>
         <div class="bk-datetime">
-          ${formatDisplayDate(bk.date)} · ${bk.time || '—'}
+          ${esc(formatDisplayDate(bk.date))} · ${esc(bk.time) || '—'}
         </div>
         <div class="bk-client">
-          <strong>${bk.name || '—'}</strong><br>
-          ${bk.contactMethod || 'Instagram'}: ${bk.contactHandle || '—'}
-          ${bk.addons?.length ? `<br>+ ${bk.addons.join(', ')}` : ''}
-          ${bk.notes ? `<br><em style="color:var(--light)">${bk.notes}</em>` : ''}
+          <strong>${esc(bk.name) || '—'}</strong><br>
+          ${esc(bk.contactMethod || 'Instagram')}: ${esc(bk.contactHandle) || '—'}
+          ${bk.addons?.length ? `<br>+ ${esc(bk.addons.join(', '))}` : ''}
+          ${bk.notes ? `<br><em style="color:var(--light)">${esc(bk.notes)}</em>` : ''}
         </div>
       </div>
       <div class="bk-actions">
-        <span class="bk-status ${bk.status || 'pending'}">${bk.status || 'pending'}</span>
-        ${bk.status !== 'confirmed' ? `<button class="bk-btn confirm" onclick="updateBookingStatus('${bk.id}', 'confirmed')">Confirm</button>` : ''}
-        <button class="bk-btn cancel" onclick="updateBookingStatus('${bk.id}', 'cancelled')">Cancel</button>
+        <span class="bk-status ${esc(bk.status || 'pending')}">${esc(bk.status || 'pending')}</span>
+        ${bk.status !== 'confirmed' ? `<button class="bk-btn confirm" onclick="updateBookingStatus('${esc(bk.id)}', 'confirmed')">Confirm</button>` : ''}
+        <button class="bk-btn cancel" onclick="updateBookingStatus('${esc(bk.id)}', 'cancelled')">Cancel</button>
       </div>
     </div>
   `).join('');
@@ -1396,6 +1416,7 @@ async function unblockDate(date) {
 // ── BOOKING MODAL ────────────────────────────────
 let modalEditId = null;    // null = new booking, string = editing existing
 let modalDateKey = null;   // date pre-filled when opening from calendar day
+let modalOriginal = {};    // the booking as it was when the modal opened
 
 // Generate 30-min time slots from startHour to endHour (24h)
 function generate30MinSlots(startHour = 9, endHour = 22) {
@@ -1474,6 +1495,7 @@ async function populateAdminTimeSelect(dateKey, excludeBookingId = null) {
 async function openAddModal(dateKey) {
   modalEditId = null;
   modalDateKey = dateKey;
+  modalOriginal = {};
   document.getElementById('modalTitle').textContent = 'New Booking';
   document.getElementById('mName').value = '';
   document.getElementById('mPhone').value = '';
@@ -1487,9 +1509,18 @@ async function openAddModal(dateKey) {
   document.getElementById('bookingModal').classList.add('open');
 }
 
+// Looks the booking up by id instead of embedding JSON in an onclick
+// attribute — names/notes containing quotes used to break the markup.
+function openEditModalById(id, dateKey) {
+  const bk = (adminCalBookings[dateKey] || []).find(b => b.id === id);
+  if (!bk) { showToast('Booking not found — refreshing'); return; }
+  openEditModal(bk);
+}
+
 async function openEditModal(bk) {
   modalEditId = bk.id;
   modalDateKey = bk.date;
+  modalOriginal = { ...bk };
   document.getElementById('modalTitle').textContent = 'Edit Booking';
   document.getElementById('mName').value = bk.name || '';
   document.getElementById('mPhone').value = bk.contactHandle || '';
@@ -1534,15 +1565,24 @@ document.getElementById('modalSaveBtn').addEventListener('click', async () => {
     return;
   }
 
+  // Only the fields the modal actually edits. Editing must not clobber
+  // contactMethod / addons / price / createdAt that came from the client.
   const data = {
     name, service, date, time, status, notes, email,
-    contactMethod: 'phone',
     contactHandle: phone,
-    price: '',
-    addons: [],
-    duration: 120,   // 2hr default — used by booking page slot-blocking logic
-    createdAt: new Date().toISOString()
+    duration: modalOriginal.duration || 120  // used by slot-blocking logic
   };
+
+  if (modalEditId) {
+    // Preserve whatever the client originally submitted
+    data.contactMethod = modalOriginal.contactMethod || 'phone';
+  } else {
+    // Brand new booking created by the owner
+    data.contactMethod = 'phone';
+    data.price         = '';
+    data.addons        = [];
+    data.createdAt     = new Date().toISOString();
+  }
 
   if (!db) { showToast('Firebase not configured'); return; }
 
@@ -1607,7 +1647,10 @@ function startDrag(e, bkId, bkData) {
 const CAL_MONTHS = ['January','February','March','April','May','June',
                     'July','August','September','October','November','December'];
 const CAL_DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+// Pinned to the 1st: otherwise setMonth() on e.g. Mar 31 rolls over
+// into the next month and month navigation skips/repeats months.
 let adminCalDate = new Date();
+adminCalDate.setDate(1);
 let adminCalBookings = {};   // { 'YYYY-MM-DD': [booking, ...] }
 let calInitialized = false;
 
@@ -1689,7 +1732,19 @@ function renderAdminCalendar() {
       bks.forEach(bk => {
         const dot = document.createElement('div');
         dot.className = 'acd-dot ' + (bk.status === 'confirmed' ? 'dot-confirmed' : 'dot-pending');
-        dot.textContent = bk.time + ' ' + (bk.name || '');
+
+        // Full time + name on desktop; compact time only on narrow screens
+        const fullEl = document.createElement('span');
+        fullEl.className = 'acd-time-full';
+        fullEl.textContent = bk.time + ' ' + (bk.name || '');
+
+        const shortEl = document.createElement('span');
+        shortEl.className = 'acd-time-short';
+        shortEl.textContent = compactTime(bk.time);
+
+        dot.appendChild(fullEl);
+        dot.appendChild(shortEl);
+        dot.title = bk.time + ' ' + (bk.name || '');
         if (bk.id) {
           dot.draggable = true;
           dot.addEventListener('dragstart', e => { e.stopPropagation(); startDrag(e, bk.id, bk); });
@@ -1750,21 +1805,21 @@ function showCalDay(dateKey, bks, el) {
     panel.innerHTML = '<div class="cal-day-empty">No bookings — tap + Add Booking to create one</div>';
   } else {
     panel.innerHTML = bks.map(bk => `
-      <div class="booking-card status-${bk.status || 'pending'}" id="bk-cal-${bk.id || ''}">
+      <div class="booking-card status-${esc(bk.status || 'pending')}" id="bk-cal-${esc(bk.id || '')}">
         <div>
-          <div class="bk-service">${bk.service || '—'}</div>
-          <div class="bk-datetime">${bk.time || '—'}</div>
+          <div class="bk-service">${esc(bk.service) || '—'}</div>
+          <div class="bk-datetime">${esc(bk.time) || '—'}</div>
           <div class="bk-client">
-            <strong>${bk.name || '—'}</strong><br>
-            Phone: ${bk.contactHandle || '—'}
-            ${bk.notes ? `<br><em style="color:var(--light)">${bk.notes}</em>` : ''}
+            <strong>${esc(bk.name) || '—'}</strong><br>
+            ${esc(bk.contactMethod === 'instagram' ? 'Instagram' : 'Phone')}: ${esc(bk.contactHandle) || '—'}
+            ${bk.notes ? `<br><em style="color:var(--light)">${esc(bk.notes)}</em>` : ''}
           </div>
         </div>
         <div class="bk-actions">
-          <span class="bk-status ${bk.status || 'pending'}">${bk.status || 'pending'}</span>
-          ${bk.id ? `<button class="bk-btn confirm" onclick='openEditModal(${JSON.stringify(bk)})'>Edit</button>` : ''}
-          ${bk.id && bk.status !== 'confirmed' ? `<button class="bk-btn confirm" onclick="updateBookingStatus('${bk.id}','confirmed')">Confirm</button>` : ''}
-          ${bk.id ? `<button class="bk-btn cancel" onclick="updateBookingStatus('${bk.id}','cancelled')">Cancel</button>` : ''}
+          <span class="bk-status ${esc(bk.status || 'pending')}">${esc(bk.status || 'pending')}</span>
+          ${bk.id ? `<button class="bk-btn confirm" onclick="openEditModalById('${esc(bk.id)}','${esc(dateKey)}')">Edit</button>` : ''}
+          ${bk.id && bk.status !== 'confirmed' ? `<button class="bk-btn confirm" onclick="updateBookingStatus('${esc(bk.id)}','confirmed')">Confirm</button>` : ''}
+          ${bk.id ? `<button class="bk-btn cancel" onclick="updateBookingStatus('${esc(bk.id)}','cancelled')">Cancel</button>` : ''}
         </div>
       </div>
     `).join('');
@@ -1774,10 +1829,12 @@ function showCalDay(dateKey, bks, el) {
 }
 
 document.getElementById('calPrev').addEventListener('click', () => {
+  adminCalDate.setDate(1);
   adminCalDate.setMonth(adminCalDate.getMonth() - 1);
   renderAdminCalendar();
 });
 document.getElementById('calNext').addEventListener('click', () => {
+  adminCalDate.setDate(1);
   adminCalDate.setMonth(adminCalDate.getMonth() + 1);
   renderAdminCalendar();
 });
@@ -1794,6 +1851,27 @@ function loadDemoData() {
 }
 
 // ── HELPERS ──────────────────────────────────────
+// Escape anything client-supplied before putting it in innerHTML.
+// Clients type free-text into the booking form, so this is required.
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// "6:30 PM" → "6:30p"   |   "10:00 AM" → "10a"   |   "7:00 PM" → "7p"
+function compactTime(t) {
+  if (!t) return '';
+  const [time, period] = t.trim().split(' ');
+  const [h, m] = time.split(':');
+  const suffix = (period || '').toLowerCase().startsWith('p') ? 'p' : 'a';
+  return (m === '00' ? h : `${h}:${m}`) + suffix;
+}
+
 function parseTimeToMinutes(timeStr) {
   if (!timeStr) return 0;
   const [time, period] = timeStr.trim().split(' ');
