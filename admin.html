@@ -1167,7 +1167,12 @@ async function loadBookings() {
 function renderBookings(docs) {
   const list = document.getElementById('bookingList');
   const today = new Date().toISOString().split('T')[0];
-  const upcoming = docs.filter(d => d.date >= today && d.status !== 'cancelled');
+  const upcoming = docs
+    .filter(d => d.date >= today && d.status !== 'cancelled')
+    .sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      return parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time);
+    });
 
   if (upcoming.length === 0) {
     list.innerHTML = '<div class="empty-state">No upcoming bookings 🤍</div>';
@@ -1626,13 +1631,20 @@ async function fetchCalBookings() {
     return;
   }
   try {
-    const snap = await db.collection('bookings')
-      .where('status', 'in', ['pending', 'confirmed'])
-      .get();
+    // Single-field fetch, status filtered client-side (no composite index needed)
+    const snap = await db.collection('bookings').get();
     snap.docs.forEach(d => {
       const bk = { id: d.id, ...d.data() };
+      if (bk.status !== 'pending' && bk.status !== 'confirmed') return;
       if (!adminCalBookings[bk.date]) adminCalBookings[bk.date] = [];
       adminCalBookings[bk.date].push(bk);
+    });
+    // Sort each day's bookings by time (earliest first) so the calendar
+    // chips and the day panel both read in chronological order
+    Object.keys(adminCalBookings).forEach(dateKey => {
+      adminCalBookings[dateKey].sort(
+        (a, b) => parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time)
+      );
     });
   } catch (e) {
     console.warn('Calendar fetch failed:', e);
