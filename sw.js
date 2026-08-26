@@ -3,7 +3,7 @@
    Enables offline support & PWA installability
    ══════════════════════════════════════════════ */
 
-const CACHE_NAME = 'nailpalette-v3';
+const CACHE_NAME = 'nailpalette-v5';
 
 // Files to cache — use scope as base so paths work on GitHub Pages subfolders
 const BASE = self.registration ? self.registration.scope : '/';

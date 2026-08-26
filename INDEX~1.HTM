@@ -432,6 +432,8 @@ body {
 /* ══════════════════════════════════════════════
    nailpalette.syd — Single Page Booking
    ══════════════════════════════════════════════ */
+const APP_VERSION = 'v5-slotfix';
+console.log('[nailpalette] build', APP_VERSION);
 
 // ── FIREBASE INIT ─────────────────────────────
 // firebase-config.js only sets window.firebaseConfig — we init here
@@ -742,7 +744,8 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
   const notes  = document.getElementById('clientNotes').value.trim();
   const btn    = document.getElementById('bookBtn');
 
-  if (!name || !handle || !state.timeSlot) return;
+  // Contact is optional — only name + time are required
+  if (!name || !state.timeSlot) return;
 
   btn.disabled = true;
   btn.textContent = 'Sending…';
