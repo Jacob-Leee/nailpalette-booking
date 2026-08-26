@@ -421,17 +421,66 @@ body {
    nailpalette.syd — Single Page Booking
    ══════════════════════════════════════════════ */
 
+// ── FIREBASE INIT ─────────────────────────────
+// firebase-config.js only sets window.firebaseConfig — we init here
+(function() {
+  try {
+    if (window.firebaseConfig && typeof firebase !== 'undefined') {
+      // Avoid double-init if admin.html already initialised on same page
+      const app = firebase.apps.length
+        ? firebase.app()
+        : firebase.initializeApp(window.firebaseConfig);
+      window._db = firebase.firestore();
+      console.log('[nailpalette] Firebase initialised ✓');
+    } else {
+      window._db = null;
+      console.error('[nailpalette] Firebase SDK or config missing.',
+                    'firebase defined:', typeof firebase !== 'undefined',
+                    '| config:', !!window.firebaseConfig);
+    }
+  } catch (e) {
+    console.error('[nailpalette] Firebase init failed:', e);
+    window._db = null;
+  }
+})();
+
 // ── SCHEDULE ─────────────────────────────────
+// Operating windows per weekday, in 24h decimal hours.
+// [firstBookingStart, lastBookingStart] — slots generated every 30 min.
 // Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6, Sun=0
-const DEFAULT_SCHEDULE = {
-  0: ['3:00 PM', '4:30 PM', '6:00 PM'],
-  1: ['7:00 PM', '8:00 PM'],
-  2: ['7:00 PM', '8:00 PM'],
-  3: ['7:00 PM', '8:00 PM'],
-  4: ['7:00 PM', '8:00 PM'],
-  5: ['7:00 PM', '8:00 PM'],
-  6: ['10:00 AM', '11:30 AM', '1:00 PM', '2:30 PM', '4:00 PM', '5:30 PM', '7:00 PM']
+const SCHEDULE_WINDOWS = {
+  0: [15,   18],    // Sunday    3:00 PM – 6:00 PM
+  1: [18.5, 20.5],  // Monday    6:30 PM – 8:30 PM
+  2: [18.5, 20.5],  // Tuesday   6:30 PM – 8:30 PM
+  3: [18.5, 20.5],  // Wednesday 6:30 PM – 8:30 PM
+  4: [18.5, 20.5],  // Thursday  6:30 PM – 8:30 PM
+  5: [18.5, 20.5],  // Friday    6:30 PM – 8:30 PM
+  6: [10,   19]     // Saturday 10:00 AM – 7:00 PM
 };
+
+function minutesToLabel(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${h12}:${m === 0 ? '00' : m} ${period}`;
+}
+
+// Build 30-min slot list for a given day of week
+function slotsForDay(dow) {
+  const win = SCHEDULE_WINDOWS[dow];
+  if (!win) return [];
+  const [startH, endH] = win;
+  const out = [];
+  for (let min = startH * 60; min <= endH * 60; min += 30) {
+    out.push(minutesToLabel(min));
+  }
+  return out;
+}
+
+// Backwards-compatible map used by calendar / fully-booked logic
+const DEFAULT_SCHEDULE = {};
+for (let d = 0; d <= 6; d++) DEFAULT_SCHEDULE[d] = slotsForDay(d);
 
 // ── STATE ────────────────────────────────────
 let state = {
@@ -591,15 +640,21 @@ async function fetchAvailableSlots(date, dateKey) {
       const overrideDoc = await window._db.collection('settings').doc('slots_' + dateKey).get();
       if (overrideDoc.exists) rawSlots = overrideDoc.data().slots || [];
 
+      // Single-field query only (no composite index needed) —
+      // status is filtered client-side.
       const snap = await window._db.collection('bookings')
         .where('date', '==', dateKey)
-        .where('status', 'in', ['pending', 'confirmed'])
         .get();
 
-      const booked = snap.docs.map(d => ({
-        time:     d.data().time,
-        duration: parseInt(d.data().duration) || 120
-      }));
+      const booked = snap.docs
+        .map(d => d.data())
+        .filter(b => b.status === 'pending' || b.status === 'confirmed')
+        .map(b => ({
+          time:     b.time,
+          duration: parseInt(b.duration) || 120
+        }));
+
+      console.log(`[nailpalette] ${dateKey}: ${booked.length} existing booking(s)`, booked);
 
       const DURATION = 120; // default service duration
       return rawSlots.map(slotTime => {
@@ -614,8 +669,10 @@ async function fetchAvailableSlots(date, dateKey) {
         return { time: slotTime, booked: isBlocked };
       });
     } catch (e) {
-      console.warn('Firebase error, using defaults', e);
+      console.error('[nailpalette] Firestore query failed — showing all slots as open:', e);
     }
+  } else {
+    console.error('[nailpalette] window._db is not set — Firebase did not initialise.');
   }
 
   return rawSlots.map(time => ({ time, booked: false }));
@@ -709,13 +766,13 @@ async function checkFullyBookedDays() {
   const lastDay  = `${year}-${String(month+1).padStart(2,'0')}-${String(new Date(year, month+1, 0).getDate()).padStart(2,'0')}`;
 
   try {
-    const snap = await window._db.collection('bookings')
-      .where('status', 'in', ['pending', 'confirmed'])
-      .get();
+    // Fetch all bookings; filter status + date range client-side (no index needed)
+    const snap = await window._db.collection('bookings').get();
 
     const byDate = {};
     snap.docs.forEach(d => {
       const bk = d.data();
+      if (bk.status !== 'pending' && bk.status !== 'confirmed') return;
       if (bk.date >= firstDay && bk.date <= lastDay) {
         if (!byDate[bk.date]) byDate[bk.date] = [];
         byDate[bk.date].push({ time: bk.time, duration: parseInt(bk.duration) || 120 });
@@ -755,18 +812,8 @@ async function init() {
   renderCalendar();
 }
 
-// Wait for Firebase
-const initInterval = setInterval(() => {
-  if (window._db !== undefined) {
-    clearInterval(initInterval);
-    init();
-  }
-}, 100);
-// Fallback: render even without Firebase
-setTimeout(() => {
-  clearInterval(initInterval);
-  if (!state.dateKey) init();
-}, 3000);
+// _db is now set synchronously above — just run init
+init();
 </script>
 
 <script>
