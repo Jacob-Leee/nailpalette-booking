@@ -234,6 +234,12 @@ body {
   transition: border-color 0.2s;
 }
 .field-input:focus { border-color: rgba(122,140,94,0.55); }
+.field-textarea {
+  resize: vertical;
+  min-height: 76px;
+  line-height: 1.6;
+  font-family: 'Raleway', sans-serif;
+}
 
 /* Contact method toggle */
 .contact-toggle {
@@ -378,6 +384,12 @@ body {
         <button class="contact-pill" id="pillPhone" onclick="setContact('phone')">📱 Phone</button>
       </div>
       <input class="field-input" id="contactHandle" type="text" placeholder="@your_instagram" autocomplete="off">
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Design ideas / requests (optional)</label>
+      <textarea class="field-input field-textarea" id="clientNotes" rows="3"
+        placeholder="e.g. Simple nail art, French, cat eye, gel removal, or paste a reference link…"></textarea>
     </div>
 
     <div class="policy-note">
@@ -716,6 +728,7 @@ document.getElementById('contactHandle').addEventListener('input', updateBookBtn
 document.getElementById('bookBtn').addEventListener('click', async () => {
   const name   = document.getElementById('clientName').value.trim();
   const handle = document.getElementById('contactHandle').value.trim();
+  const notes  = document.getElementById('clientNotes').value.trim();
   const btn    = document.getElementById('bookBtn');
 
   if (!name || !handle || !state.timeSlot) return;
@@ -733,7 +746,7 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
     status:        'pending',
     duration:      120,
     addons:        [],
-    notes:         '',
+    notes:         notes,
     email:         '',
     createdAt:     new Date().toISOString()
   };
