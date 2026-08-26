@@ -516,6 +516,25 @@ function parseTimeToMinutes(t) {
   return hrs * 60 + (m || 0);
 }
 
+// Default service length — a new booking occupies this many minutes
+const SERVICE_DURATION = 120;
+
+// Single source of truth for "is this slot unavailable?".
+// Used by BOTH the time-slot list and the fully-booked calendar check,
+// so the two can never disagree.
+function isSlotBlocked(slotTime, bookings) {
+  const slotMin = parseTimeToMinutes(slotTime);
+  return bookings.some(b => {
+    const bStart = parseTimeToMinutes(b.time);
+    const bEnd   = bStart + (parseInt(b.duration) || SERVICE_DURATION);
+    // 1) Slot starts inside an existing booking
+    if (slotMin >= bStart && slotMin < bEnd) return true;
+    // 2) A new booking here would run into an existing booking
+    if (slotMin < bStart && slotMin + SERVICE_DURATION > bStart) return true;
+    return false;
+  });
+}
+
 function formatDateKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
@@ -668,18 +687,10 @@ async function fetchAvailableSlots(date, dateKey) {
 
       console.log(`[nailpalette] ${dateKey}: ${booked.length} existing booking(s)`, booked);
 
-      const DURATION = 120; // default service duration
-      return rawSlots.map(slotTime => {
-        const slotMin = parseTimeToMinutes(slotTime);
-        const isBlocked = booked.some(b => {
-          const bStart = parseTimeToMinutes(b.time);
-          const bEnd   = bStart + b.duration;
-          if (slotMin >= bStart && slotMin < bEnd) return true;
-          if (slotMin < bStart && slotMin + DURATION > bStart) return true;
-          return false;
-        });
-        return { time: slotTime, booked: isBlocked };
-      });
+      return rawSlots.map(slotTime => ({
+        time:   slotTime,
+        booked: isSlotBlocked(slotTime, booked)
+      }));
     } catch (e) {
       console.error('[nailpalette] Firestore query failed — showing all slots as open:', e);
     }
@@ -797,14 +808,8 @@ async function checkFullyBookedDays() {
       const dow   = new Date(dk + 'T12:00:00').getDay();
       const slots = DEFAULT_SCHEDULE[dow] || [];
       if (!slots.length) return;
-      const allBlocked = slots.every(slotTime => {
-        const slotMin = parseTimeToMinutes(slotTime);
-        return bks.some(b => {
-          const bStart = parseTimeToMinutes(b.time);
-          const bEnd   = bStart + b.duration;
-          return slotMin >= bStart && slotMin < bEnd;
-        });
-      });
+      // Uses the exact same rule as the time-slot list
+      const allBlocked = slots.every(slotTime => isSlotBlocked(slotTime, bks));
       if (allBlocked) fullyBookedDates.add(dk);
     });
   } catch (e) {
