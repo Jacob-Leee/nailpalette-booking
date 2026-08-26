@@ -1422,15 +1422,17 @@ async function populateAdminTimeSelect(dateKey, excludeBookingId = null) {
   let existingBookings = [];
   if (db) {
     try {
+      // Single-field query (no composite index required)
       const snap = await db.collection('bookings')
         .where('date', '==', dateKey)
-        .where('status', 'in', ['pending', 'confirmed'])
         .get();
       existingBookings = snap.docs
         .filter(d => d.id !== excludeBookingId)
-        .map(d => ({
-          time:     d.data().time,
-          duration: parseInt(d.data().duration) || 120
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(b => b.status === 'pending' || b.status === 'confirmed')
+        .map(b => ({
+          time:     b.time,
+          duration: parseInt(b.duration) || 120
         }));
     } catch (e) {
       console.warn('Could not fetch bookings for time check', e);
@@ -1452,11 +1454,11 @@ async function populateAdminTimeSelect(dateKey, excludeBookingId = null) {
       return !(slotMin + NEW_DURATION + BUFFER <= bStart || slotMin >= bEnd + BUFFER);
     });
 
+    // Admin can always pick any time — conflicts are flagged, not blocked
     const opt = document.createElement('option');
     opt.value = slotTime;
-    opt.textContent = isBlocked ? `${slotTime}  ✕` : slotTime;
-    opt.disabled = isBlocked;
-    if (isBlocked) opt.style.color = 'var(--light)';
+    opt.textContent = isBlocked ? `${slotTime}  ⚠ overlaps` : slotTime;
+    if (isBlocked) opt.style.color = '#B08968';
     select.appendChild(opt);
   });
 
