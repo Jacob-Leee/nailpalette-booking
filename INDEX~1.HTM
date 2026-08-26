@@ -558,6 +558,16 @@ function scrollTo(el) {
   setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
 }
 
+// Firestore .get() has NO built-in timeout — on a flaky connection it can
+// hang forever, which used to leave the UI stuck on "Loading…".
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
+  ]);
+}
+
 // ── CALENDAR ─────────────────────────────────
 let calDate = new Date();
 calDate.setDate(1);
@@ -646,8 +656,24 @@ function selectDate(date, dateKey, el) {
 
 // ── TIME SLOTS ───────────────────────────────
 async function loadTimeSlots(date, dateKey) {
-  const slots = await fetchAvailableSlots(date, dateKey);
   const content = document.getElementById('timeContent');
+
+  let slots;
+  try {
+    slots = await fetchAvailableSlots(date, dateKey);
+  } catch (e) {
+    // Should never happen (fetchAvailableSlots catches internally), but if it
+    // does we must not leave the user staring at "Loading…" forever.
+    console.error('[nailpalette] loadTimeSlots failed:', e);
+    content.innerHTML =
+      '<div class="no-slots-msg">Couldn\'t load times. <button class="time-btn" id="retrySlots">Retry</button></div>';
+    const retry = document.getElementById('retrySlots');
+    if (retry) retry.addEventListener('click', () => {
+      content.innerHTML = '<div class="loading-msg">Loading…</div>';
+      loadTimeSlots(date, dateKey);
+    });
+    return;
+  }
 
   if (!slots || slots.length === 0) {
     content.innerHTML = '<div class="no-slots-msg">No available times for this day. Please choose another date.</div>';
@@ -670,6 +696,14 @@ async function loadTimeSlots(date, dateKey) {
 
   content.innerHTML = '';
   content.appendChild(grid);
+
+  // If every slot is taken, say so rather than showing a wall of dead buttons
+  if (slots.every(s => s.booked)) {
+    const msg = document.createElement('div');
+    msg.className = 'no-slots-msg';
+    msg.textContent = 'Fully booked — please choose another date.';
+    content.appendChild(msg);
+  }
 }
 
 async function fetchAvailableSlots(date, dateKey) {
@@ -678,14 +712,24 @@ async function fetchAvailableSlots(date, dateKey) {
 
   if (window._db) {
     try {
-      const overrideDoc = await window._db.collection('settings').doc('slots_' + dateKey).get();
-      if (overrideDoc.exists) rawSlots = overrideDoc.data().slots || [];
+      // Slot overrides are optional — never let them block the whole render
+      try {
+        const overrideDoc = await withTimeout(
+          window._db.collection('settings').doc('slots_' + dateKey).get(),
+          6000, 'slot override');
+        if (overrideDoc.exists) {
+          const o = overrideDoc.data();
+          if (o && Array.isArray(o.slots)) rawSlots = o.slots;
+        }
+      } catch (e) {
+        console.warn('[nailpalette] slot override skipped:', e.message);
+      }
 
       // Single-field query only (no composite index needed) —
       // status is filtered client-side.
-      const snap = await window._db.collection('bookings')
-        .where('date', '==', dateKey)
-        .get();
+      const snap = await withTimeout(
+        window._db.collection('bookings').where('date', '==', dateKey).get(),
+        8000, 'bookings query');
 
       const booked = snap.docs
         .map(d => d.data())
@@ -783,9 +827,9 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
   try {
     // Re-check availability at submit time so two people can't grab
     // the same slot while both have the page open
-    const fresh = await window._db.collection('bookings')
-      .where('date', '==', state.dateKey)
-      .get();
+    const fresh = await withTimeout(
+      window._db.collection('bookings').where('date', '==', state.dateKey).get(),
+      8000, 'availability re-check');
     const taken = fresh.docs
       .map(d => d.data())
       .filter(b => b.status === 'pending' || b.status === 'confirmed')
@@ -829,7 +873,8 @@ async function checkFullyBookedDays() {
 
   try {
     // Fetch all bookings; filter status + date range client-side (no index needed)
-    const snap = await window._db.collection('bookings').get();
+    const snap = await withTimeout(
+      window._db.collection('bookings').get(), 8000, 'month bookings');
 
     const byDate = {};
     snap.docs.forEach(d => {
@@ -857,15 +902,27 @@ async function checkFullyBookedDays() {
 
 // ── INIT ─────────────────────────────────────
 async function init() {
-  // Load blocked vacation dates
+  // Render immediately so the calendar is never blank while we wait on network
+  renderCalendar();
+
   if (window._db) {
     try {
-      const doc = await window._db.collection('settings').doc('blocked_dates').get();
+      const doc = await withTimeout(
+        window._db.collection('settings').doc('blocked_dates').get(),
+        6000, 'blocked dates');
       if (doc.exists) blockedDates = new Set(doc.data().dates || []);
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[nailpalette] blocked dates skipped:', e.message);
+    }
   }
-  await checkFullyBookedDays();
-  renderCalendar();
+
+  try {
+    await checkFullyBookedDays();
+  } catch (e) {
+    console.warn('[nailpalette] fully-booked check skipped:', e.message);
+  }
+
+  renderCalendar();   // re-render with the live data
 }
 
 // _db is now set synchronously above — just run init
