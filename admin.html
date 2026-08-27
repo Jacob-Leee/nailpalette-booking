@@ -1237,7 +1237,9 @@ async function updateBookingStatus(id, status) {
       const snap = await db.collection('bookings').doc(id).get();
       const bk = snap.data();
       await sendClientConfirmation(bk);
-      showToast('✓ Booking confirmed & email sent');
+      // The client sees the status change when they re-open the booking link.
+      // An email only goes out if they supplied one AND the template is set up.
+      showToast(bk.email ? '✓ Confirmed & email sent' : '✓ Confirmed');
     } else {
       showToast('Booking cancelled');
     }
