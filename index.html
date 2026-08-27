@@ -1062,7 +1062,8 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
       return;
     }
 
-    const ref = await window._db.collection('bookings').add(data);
+    const ref = await withTimeout(
+      window._db.collection('bookings').add(data), 12000, 'saving booking');
     rememberMyBooking(ref.id);          // so this device can track its status
     // Fire-and-forget: a failed email must never break a saved booking
     notifyOwner(data, ref.id);
