@@ -205,6 +205,7 @@ body {
     <div class="btn-row">
       <button class="btn-confirm" id="doConfirmBtn">✓ Yes, Confirm Booking</button>
     </div>
+    <p class="subtitle signed-as" style="margin:10px 0 0"></p>
     <a href="admin.html" class="btn-back">← Back to Dashboard</a>
   </div>
 
@@ -217,6 +218,7 @@ body {
     <div class="btn-row">
       <button class="btn-decline" id="doDeclineBtn">✕ Yes, Decline Booking</button>
     </div>
+    <p class="subtitle signed-as" style="margin:10px 0 0"></p>
     <a href="admin.html" class="btn-back">← Back to Dashboard</a>
   </div>
 
@@ -313,8 +315,15 @@ function initAuthGate() {
   auth = firebase.auth();
 
   auth.onAuthStateChanged(user => {
-    if (user) loadBooking();
-    else      show('stateLogin');
+    if (user) {
+      console.log('[nailpalette] signed in as:', user.email);
+      document.querySelectorAll('.signed-as').forEach(el => {
+        el.textContent = 'Signed in as ' + user.email;
+      });
+      loadBooking();
+    } else {
+      show('stateLogin');
+    }
   });
 }
 
@@ -413,9 +422,34 @@ document.getElementById('doConfirmBtn').addEventListener('click', async () => {
   } catch (e) {
     btn.disabled = false;
     btn.textContent = '✓ Yes, Confirm Booking';
-    alert('Error confirming booking. Please use the admin dashboard.');
+    reportError('confirming', e);
   }
 });
+
+// Surface the REAL reason instead of a generic message
+function reportError(what, e) {
+  console.error(`[nailpalette] Error ${what} booking:`, e);
+  const who = (auth && auth.currentUser) ? auth.currentUser.email : 'not signed in';
+  let msg;
+
+  if (e && e.code === 'permission-denied') {
+    msg = 'Permission denied by Firestore rules.\n\n' +
+          'Signed in as: ' + who + '\n\n' +
+          'The rules only allow the owner account to change bookings. ' +
+          'Check that this email exactly matches the one in your Firestore rules ' +
+          '(Firebase Console → Firestore → Rules).';
+  } else if (e && e.code === 'unavailable') {
+    msg = 'Could not reach Firestore — check your internet connection, then try again.';
+  } else if (e && e.code === 'not-found') {
+    msg = 'This booking no longer exists. It may have been deleted.';
+  } else {
+    msg = 'Error ' + what + ' booking.\n\n' +
+          'Code: '    + ((e && e.code) || 'unknown') + '\n' +
+          'Message: ' + ((e && e.message) || String(e)) + '\n' +
+          'Signed in as: ' + who;
+  }
+  alert(msg);
+}
 
 // ── STEP 2b: Decline button clicked ──────────────────
 document.getElementById('doDeclineBtn').addEventListener('click', async () => {
@@ -434,7 +468,7 @@ document.getElementById('doDeclineBtn').addEventListener('click', async () => {
   } catch (e) {
     btn.disabled = false;
     btn.textContent = '✕ Yes, Decline Booking';
-    alert('Error declining booking. Please use the admin dashboard.');
+    reportError('declining', e);
   }
 });
 
