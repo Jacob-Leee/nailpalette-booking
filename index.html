@@ -148,6 +148,52 @@ body {
   font-weight: 600;
 }
 
+/* Days where THIS device has a booking */
+.cal-day.has-mine {
+  position: relative;
+  font-weight: 700;
+  opacity: 1;
+}
+.cal-day.has-mine::after {
+  content: '';
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--sage);
+}
+.cal-day.has-mine.mine-pending::after { background: #7AA3B8; }
+.cal-day.has-mine.selected::after    { background: #fff; }
+/* Own booking beats the greyed-out "fully booked" look */
+.cal-day.has-mine.unavailable {
+  color: var(--dark);
+  opacity: 1;
+}
+
+.cal-legend {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 0.5px solid var(--border);
+}
+.cal-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--light);
+}
+.cal-legend-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
 /* ── TIME SLOTS ── */
 .section-label {
   font-size: 10px;
@@ -267,6 +313,49 @@ body {
   background: rgba(122,140,94,0.08);
 }
 
+/* ── MY BOOKINGS ── */
+.my-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+.my-item:last-child { margin-bottom: 0; }
+.my-when {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dark);
+  line-height: 1.5;
+}
+.my-when small { display: block; font-weight: 400; color: var(--light); font-size: 11px; }
+.my-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border-radius: 50px;
+  white-space: nowrap;
+}
+.my-badge.confirmed { background: rgba(122,140,94,0.2);  color: var(--sage); }
+.my-badge.pending   { background: rgba(122,163,184,0.2); color: #5A8EA8; }
+.my-badge.cancelled { background: rgba(200,120,120,0.18); color: #B06A6A; }
+
+/* Own booking highlighted in the time grid */
+.time-btn.mine {
+  border-color: var(--sage);
+  background: rgba(122,140,94,0.14);
+  color: var(--sage);
+  opacity: 1;
+  text-decoration: none;
+  font-weight: 600;
+}
+
 /* ── POLICY NOTE ── */
 .policy-note {
   font-size: 12px;
@@ -345,6 +434,12 @@ body {
 
 <main class="main-wrap" id="mainWrap">
 
+  <!-- MY BOOKINGS (only visible if this device has booked before) -->
+  <div class="section-card hidden" id="myCard">
+    <div class="section-label">Your Bookings</div>
+    <div id="myList"></div>
+  </div>
+
   <!-- CALENDAR -->
   <div class="section-card" id="calCard">
     <div class="cal-header">
@@ -357,6 +452,14 @@ body {
       <span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
     </div>
     <div class="cal-grid" id="calGrid"></div>
+    <div class="cal-legend hidden" id="calLegend">
+      <span class="cal-legend-item">
+        <span class="cal-legend-dot" style="background:#7AA3B8"></span>Your booking — pending
+      </span>
+      <span class="cal-legend-item">
+        <span class="cal-legend-dot" style="background:#7A8C5E"></span>Your booking — confirmed
+      </span>
+    </div>
   </div>
 
   <!-- TIME SLOTS -->
@@ -408,7 +511,8 @@ body {
       <div class="success-icon">🤍</div>
       <h2 class="success-title">Booking Requested!</h2>
       <div class="success-detail" id="successDetail"></div>
-      <p class="success-msg">Your request has been sent to <strong>nailpalette.syd</strong>.<br>We'll confirm shortly via your contact method.</p>
+      <p class="success-msg">Your request has been sent to <strong>nailpalette.syd</strong>.<br>
+      Re-open this page any time to see whether it's been confirmed.</p>
       <div class="success-contact">
         <div>📸 <a href="https://instagram.com/nailpalette.syd" target="_blank">@nailpalette.syd</a></div>
         <div>💬 KakaoTalk: Nailpalette_syd</div>
@@ -508,6 +612,8 @@ let state = {
 
 let blockedDates     = new Set();
 let fullyBookedDates = new Set();
+// Bookings made from THIS device — [{id, date, time, status}]
+let myBookings       = [];
 
 // ── HELPERS ──────────────────────────────────
 function parseTimeToMinutes(t) {
@@ -610,10 +716,24 @@ function renderCalendar() {
 
     if (date.getTime() === today.getTime()) el.classList.add('today');
 
+    // Does this device have a booking on this day?
+    const mine = myBookings.find(b => b.date === dateKey);
+
     if (isPast || isBlocked || !hasSlots || isFullyBooked) {
       el.classList.add(isPast ? 'past' : 'unavailable');
     } else {
       el.classList.add('available');
+    }
+
+    if (mine) {
+      el.classList.add('has-mine');
+      if (mine.status !== 'confirmed') el.classList.add('mine-pending');
+      el.title = `Your booking · ${mine.time} · ${mine.status}`;
+    }
+
+    // Tappable if bookable, OR if it's their own day (so they can review it)
+    if ((!isPast && !isBlocked && hasSlots && !isFullyBooked) || (mine && !isPast)) {
+      el.style.cursor = 'pointer';
       el.addEventListener('click', () => selectDate(date, dateKey, el));
     }
 
@@ -688,11 +808,22 @@ async function loadTimeSlots(date, dateKey) {
   slots.forEach(slot => {
     const btn = document.createElement('button');
     btn.className = 'time-btn';
-    btn.textContent = slot.time;
     btn.disabled = slot.booked;
-    if (!slot.booked) {
+
+    if (slot.mine) {
+      // This device booked this slot — show it, don't mask it
+      btn.classList.add('mine');
+      btn.textContent = `${slot.time} · ${slot.status === 'confirmed' ? 'Yours ✓' : 'Yours (pending)'}`;
+      btn.title = 'Your booking';
+    } else if (slot.booked) {
+      // Someone else's booking — time is shown, identity is not
+      btn.textContent = `${slot.time} · ✱✱✱`;
+      btn.title = 'Already booked';
+    } else {
+      btn.textContent = slot.time;
       btn.addEventListener('click', () => selectTime(slot.time, btn));
     }
+
     grid.appendChild(btn);
   });
 
@@ -733,20 +864,28 @@ async function fetchAvailableSlots(date, dateKey) {
         window._db.collection('bookings').where('date', '==', dateKey).get(),
         8000, 'bookings query');
 
+      const myIds = getMyIds();
       const booked = snap.docs
-        .map(d => d.data())
+        .map(d => ({ id: d.id, ...d.data() }))
         .filter(b => b.status === 'pending' || b.status === 'confirmed')
         .map(b => ({
           time:     b.time,
-          duration: parseInt(b.duration) || 120
+          duration: parseInt(b.duration) || 120,
+          mine:     myIds.includes(b.id),
+          status:   b.status
         }));
 
-      console.log(`[nailpalette] ${dateKey}: ${booked.length} existing booking(s)`, booked);
+      console.log(`[nailpalette] ${dateKey}: ${booked.length} existing booking(s)`);
 
-      return rawSlots.map(slotTime => ({
-        time:   slotTime,
-        booked: isSlotBlocked(slotTime, booked) || isSlotInPast(slotTime, dateKey)
-      }));
+      return rawSlots.map(slotTime => {
+        const own = booked.find(b => b.mine && b.time === slotTime);
+        return {
+          time:   slotTime,
+          booked: isSlotBlocked(slotTime, booked) || isSlotInPast(slotTime, dateKey),
+          mine:   !!own,
+          status: own ? own.status : null
+        };
+      });
     } catch (e) {
       console.error('[nailpalette] Firestore query failed — showing all slots as open:', e);
     }
@@ -846,6 +985,7 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
     }
 
     const ref = await window._db.collection('bookings').add(data);
+    rememberMyBooking(ref.id);          // so this device can track its status
     // Fire-and-forget: a failed email must never break a saved booking
     notifyOwner(data, ref.id);
   } catch (e) {
@@ -865,7 +1005,92 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
   document.getElementById('successDetail').textContent =
     `${formatDisplayDate(state.dateKey)}  ·  ${state.timeSlot}`;
   scrollTo(successCard);
+
+  // Refresh the "Your Bookings" card so the new request appears with its status
+  loadMyBookings().catch(() => {});
 });
+
+// ── MY BOOKINGS (per-device) ─────────────────
+// The booking IDs this device created. Lets a client re-open the link and
+// see whether their request has been confirmed — no email/login needed.
+const MY_KEY = 'np_my_bookings';
+
+function getMyIds() {
+  try {
+    const raw = localStorage.getItem(MY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+
+function rememberMyBooking(id) {
+  try {
+    const ids = getMyIds();
+    if (!ids.includes(id)) ids.push(id);
+    // keep the list from growing forever
+    localStorage.setItem(MY_KEY, JSON.stringify(ids.slice(-20)));
+  } catch (e) { /* private browsing — feature just degrades */ }
+}
+
+async function loadMyBookings() {
+  const ids = getMyIds();
+  const card = document.getElementById('myCard');
+  if (!ids.length || !window._db) { card.classList.add('hidden'); return; }
+
+  const results = [];
+  for (const id of ids) {
+    try {
+      const doc = await withTimeout(
+        window._db.collection('bookings').doc(id).get(), 6000, 'my booking');
+      if (doc.exists) results.push({ id, ...doc.data() });
+    } catch (e) {
+      console.warn('[nailpalette] could not load booking', id, e.message);
+    }
+  }
+
+  // Only show today and future
+  const todayKey = formatDateKey(new Date());
+  myBookings = results
+    .filter(b => b.date >= todayKey && b.status !== 'cancelled')
+    .sort((a, b) => a.date === b.date
+      ? parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time)
+      : (a.date < b.date ? -1 : 1));
+
+  const legend = document.getElementById('calLegend');
+  if (!myBookings.length) {
+    card.classList.add('hidden');
+    legend.classList.add('hidden');
+    renderCalendar();
+    return;
+  }
+  legend.classList.remove('hidden');
+
+  const list = document.getElementById('myList');
+  list.innerHTML = '';
+  myBookings.forEach(b => {
+    const row = document.createElement('div');
+    row.className = 'my-item';
+
+    const when = document.createElement('div');
+    when.className = 'my-when';
+    when.textContent = `${formatDisplayDate(b.date)} · ${b.time}`;
+    const sub = document.createElement('small');
+    sub.textContent = b.status === 'confirmed'
+      ? 'See you then!'
+      : 'Waiting for nailpalette.syd to confirm';
+    when.appendChild(sub);
+
+    const badge = document.createElement('span');
+    badge.className = 'my-badge ' + (b.status || 'pending');
+    badge.textContent = b.status || 'pending';
+
+    row.appendChild(when);
+    row.appendChild(badge);
+    list.appendChild(row);
+  });
+
+  card.classList.remove('hidden');
+  renderCalendar();   // paint the dots on the calendar
+}
 
 // ── OWNER EMAIL NOTIFICATION ─────────────────
 async function notifyOwner(bk, bookingId) {
@@ -971,6 +1196,13 @@ async function init() {
   }
 
   renderCalendar();   // re-render with the live data
+
+  // Show this device's own bookings + their confirmation status
+  try {
+    await loadMyBookings();
+  } catch (e) {
+    console.warn('[nailpalette] my-bookings skipped:', e.message);
+  }
 }
 
 // _db is now set synchronously above — just run init
