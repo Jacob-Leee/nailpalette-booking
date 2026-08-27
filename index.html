@@ -280,6 +280,19 @@ body {
   transition: border-color 0.2s;
 }
 .field-input:focus { border-color: rgba(122,140,94,0.55); }
+.field-hint {
+  font-size: 11px;
+  color: var(--light);
+  line-height: 1.5;
+  margin-top: 5px;
+}
+.field-input.invalid { border-color: rgba(190,110,110,0.7); }
+.field-error {
+  font-size: 11px;
+  color: #B06A6A;
+  margin-top: 5px;
+  min-height: 14px;
+}
 .field-textarea {
   resize: vertical;
   min-height: 76px;
@@ -490,6 +503,14 @@ body {
     </div>
 
     <div class="field-group">
+      <label class="field-label">Email *</label>
+      <input class="field-input" id="clientEmail" type="email" placeholder="your@email.com"
+             autocomplete="email" maxlength="120" required>
+      <p class="field-hint">Your confirmation email is sent here, so please make sure it's correct.</p>
+      <p class="field-error" id="emailError"></p>
+    </div>
+
+    <div class="field-group">
       <label class="field-label">Design ideas / requests (optional)</label>
       <textarea class="field-input field-textarea" id="clientNotes" rows="3" maxlength="500"
         placeholder="e.g. Simple nail art, French, cat eye, gel removal, or paste a reference link…"></textarea>
@@ -497,7 +518,8 @@ body {
 
     <div class="policy-note">
       📍 1:1 private · Carlingford, Sydney<br>
-      · Exact address sent after confirmation<br>
+      · You'll get a confirmation email once approved<br>
+      · Exact address is sent with that email<br>
       · 48hr cancellation notice appreciated<br>
       · Price confirmed at consultation
     </div>
@@ -512,7 +534,8 @@ body {
       <h2 class="success-title">Booking Requested!</h2>
       <div class="success-detail" id="successDetail"></div>
       <p class="success-msg">Your request has been sent to <strong>nailpalette.syd</strong>.<br>
-      Re-open this page any time to see whether it's been confirmed.</p>
+      You'll get a confirmation email once it's approved — check your junk folder too.<br>
+      You can also re-open this page any time to see the status.</p>
       <div class="success-contact">
         <div>📸 <a href="https://instagram.com/nailpalette.syd" target="_blank">@nailpalette.syd</a></div>
         <div>💬 KakaoTalk: Nailpalette_syd</div>
@@ -923,22 +946,59 @@ function setContact(method) {
 }
 
 // ── FORM VALIDATION ──────────────────────────
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isValidEmail(v) { return EMAIL_RE.test(v); }
+
 function updateBookBtn() {
-  const name = document.getElementById('clientName').value.trim();
-  document.getElementById('bookBtn').disabled = !(name && state.timeSlot);
+  const name  = document.getElementById('clientName').value.trim();
+  const email = document.getElementById('clientEmail').value.trim();
+  // Name, a time slot, and a valid email are all required
+  document.getElementById('bookBtn').disabled =
+    !(name && state.timeSlot && isValidEmail(email));
 }
+
+// Show the email error only once they've typed something and moved on
+function checkEmailField(showWhileTyping) {
+  const input = document.getElementById('clientEmail');
+  const err   = document.getElementById('emailError');
+  const v     = input.value.trim();
+
+  if (!v) {
+    err.textContent = showWhileTyping ? 'Email is required.' : '';
+    input.classList.toggle('invalid', showWhileTyping);
+  } else if (!isValidEmail(v)) {
+    err.textContent = 'That doesn\'t look like a valid email address.';
+    input.classList.add('invalid');
+  } else {
+    err.textContent = '';
+    input.classList.remove('invalid');
+  }
+}
+
 document.getElementById('clientName').addEventListener('input', updateBookBtn);
 document.getElementById('contactHandle').addEventListener('input', updateBookBtn);
+document.getElementById('clientEmail').addEventListener('input', () => {
+  checkEmailField(false);
+  updateBookBtn();
+});
+document.getElementById('clientEmail').addEventListener('blur', () => checkEmailField(true));
 
 // ── SUBMIT BOOKING ───────────────────────────
 document.getElementById('bookBtn').addEventListener('click', async () => {
   const name   = document.getElementById('clientName').value.trim();
   const handle = document.getElementById('contactHandle').value.trim();
   const notes  = document.getElementById('clientNotes').value.trim();
+  const email  = document.getElementById('clientEmail').value.trim();
   const btn    = document.getElementById('bookBtn');
 
-  // Contact is optional — only name + time are required
+  // Name, time and a valid email are required; contact handle is optional
   if (!name || !state.timeSlot) return;
+  if (!isValidEmail(email)) {
+    checkEmailField(true);
+    document.getElementById('clientEmail').focus();
+    return;
+  }
 
   // Bound the free-text fields so nothing absurd reaches Firestore
   if (name.length > 60) {
@@ -951,6 +1011,10 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
   }
   if (notes.length > 500) {
     alert('Please keep your design notes under 500 characters.');
+    return;
+  }
+  if (email.length > 120) {
+    alert('Please use a shorter email address.');
     return;
   }
 
@@ -968,7 +1032,7 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
     duration:      120,
     addons:        [],
     notes:         notes,
-    email:         '',
+    email:         email,
     createdAt:     new Date().toISOString()
   };
 
