@@ -477,7 +477,7 @@ body {
 
     <div class="field-group">
       <label class="field-label">Your Name *</label>
-      <input class="field-input" id="clientName" type="text" placeholder="e.g. Sarah" autocomplete="name">
+      <input class="field-input" id="clientName" type="text" placeholder="e.g. Sarah" autocomplete="name" maxlength="60">
     </div>
 
     <div class="field-group">
@@ -486,12 +486,12 @@ body {
         <button class="contact-pill active" id="pillInsta" onclick="setContact('instagram')">📸 Instagram</button>
         <button class="contact-pill" id="pillPhone" onclick="setContact('phone')">📱 Phone</button>
       </div>
-      <input class="field-input" id="contactHandle" type="text" placeholder="@your_instagram" autocomplete="off">
+      <input class="field-input" id="contactHandle" type="text" placeholder="@your_instagram" autocomplete="off" maxlength="80">
     </div>
 
     <div class="field-group">
       <label class="field-label">Design ideas / requests (optional)</label>
-      <textarea class="field-input field-textarea" id="clientNotes" rows="3"
+      <textarea class="field-input field-textarea" id="clientNotes" rows="3" maxlength="500"
         placeholder="e.g. Simple nail art, French, cat eye, gel removal, or paste a reference link…"></textarea>
     </div>
 
@@ -939,6 +939,20 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
 
   // Contact is optional — only name + time are required
   if (!name || !state.timeSlot) return;
+
+  // Bound the free-text fields so nothing absurd reaches Firestore
+  if (name.length > 60) {
+    alert('Please use a shorter name (60 characters max).');
+    return;
+  }
+  if (handle.length > 80) {
+    alert('Please use a shorter contact handle.');
+    return;
+  }
+  if (notes.length > 500) {
+    alert('Please keep your design notes under 500 characters.');
+    return;
+  }
 
   btn.disabled = true;
   btn.textContent = 'Sending…';
