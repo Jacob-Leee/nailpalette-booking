@@ -1,88 +1,445 @@
-rules_version = '2';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#F5F4EF">
+<title>nailpalette.syd — Booking Action</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Raleway:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #F5F4EF; --surface: #EDECEA;
+  --sage: #7A8C5E; --dark: #2E3028;
+  --mid: #5E5F52; --light: #9A9B8A;
+  --border: rgba(122,140,94,0.22);
+}
+body {
+  font-family: 'Raleway', sans-serif;
+  background: var(--bg);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  -webkit-font-smoothing: antialiased;
+}
+.card {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: 20px;
+  padding: 36px 28px;
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+}
+.brand {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 24px;
+  font-weight: 400;
+  letter-spacing: 3px;
+  color: var(--dark);
+  margin-bottom: 24px;
+}
+.brand em { color: var(--sage); font-style: italic; }
+.brand span { color: var(--sage); font-size: 18px; }
 
-// nailpalette.syd — Firestore Security Rules
-//
-// Paste into: Firebase Console → Firestore Database → Rules → Publish
-//
-// WHAT THIS FIXES
-//   Test-mode rules (`allow read, write: if true`) let anyone with the public
-//   API key read every booking — names, phone numbers, Instagram handles, notes.
-//   The admin login screen does NOT prevent this; it only hides the admin UI.
-//
-// WHAT THIS DOES NOT FIX
-//   The public booking page still has to LIST bookings for a date to work out
-//   which slots are free, so `list` stays open below. Times leak; nothing else
-//   should. See the note at the bottom for how to close that too.
+.icon { font-size: 44px; margin-bottom: 14px; }
+.title {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--dark);
+  margin-bottom: 8px;
+}
+.subtitle {
+  font-size: 12px;
+  color: var(--light);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
 
-service cloud.firestore {
-  match /databases/{database}/documents {
+/* Booking detail box */
+.booking-detail {
+  background: rgba(122,140,94,0.07);
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  text-align: left;
+  margin-bottom: 22px;
+}
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 7px 0;
+  border-bottom: 0.5px solid rgba(122,140,94,0.10);
+  font-size: 13px;
+}
+.detail-row:last-child { border-bottom: none; }
+.detail-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--light);
+  min-width: 70px;
+}
+.detail-val {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 16px;
+  color: var(--dark);
+  text-align: right;
+}
 
-    // ── Only the salon owner counts as admin ──
-    // Replace with the exact email used to sign in to admin.html
-    function isAdmin() {
-      return request.auth != null
-          && request.auth.token.email == 'J891016@gmail.com';
+/* Action buttons */
+.btn-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.btn-confirm {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, var(--sage), #5e6e46);
+  border: none;
+  border-radius: 50px;
+  color: white;
+  font-family: 'Raleway', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-confirm:hover { box-shadow: 0 6px 20px rgba(122,140,94,0.30); }
+.btn-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-decline {
+  width: 100%;
+  padding: 13px;
+  background: none;
+  border: 0.5px solid rgba(180,90,90,0.35);
+  border-radius: 50px;
+  color: #a06060;
+  font-family: 'Raleway', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-decline:hover { background: rgba(180,90,90,0.06); }
+.btn-decline:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-back {
+  display: inline-block;
+  margin-top: 14px;
+  padding: 11px 24px;
+  border: 0.5px solid var(--border);
+  border-radius: 50px;
+  font-family: 'Raleway', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--mid);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.btn-back:hover { border-color: var(--sage); color: var(--sage); }
+
+.loader {
+  display: inline-block;
+  width: 28px; height: 28px;
+  border: 2px solid rgba(122,140,94,0.2);
+  border-top-color: var(--sage);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 16px auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.success-color { color: var(--sage); }
+.error-color   { color: #a06060; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">nail<em>palette</em><span>.syd</span></div>
+
+  <!-- Loading -->
+  <div id="stateLoading">
+    <div class="loader"></div>
+    <p class="subtitle">Loading booking details…</p>
+  </div>
+
+  <!-- ── SIGN IN (owner only) ── -->
+  <div id="stateLogin" style="display:none">
+    <div class="icon">🔒</div>
+    <h2 class="title">Owner sign-in</h2>
+    <p class="subtitle">Sign in once to confirm or decline bookings.<br>This device will stay signed in.</p>
+    <div style="text-align:left;margin-bottom:16px">
+      <label class="detail-label" style="display:block;margin-bottom:6px">Email</label>
+      <input id="authEmail" type="email" autocomplete="username"
+             style="width:100%;padding:12px 14px;background:rgba(245,244,239,0.9);border:0.5px solid var(--border);border-radius:12px;font-family:'Raleway',sans-serif;font-size:14px;outline:none;margin-bottom:12px">
+      <label class="detail-label" style="display:block;margin-bottom:6px">Password</label>
+      <input id="authPass" type="password" autocomplete="current-password"
+             style="width:100%;padding:12px 14px;background:rgba(245,244,239,0.9);border:0.5px solid var(--border);border-radius:12px;font-family:'Raleway',sans-serif;font-size:14px;outline:none">
+    </div>
+    <div class="btn-row">
+      <button class="btn-confirm" id="authBtn">Sign In</button>
+    </div>
+    <p class="subtitle error-color" id="authError" style="min-height:16px;margin:0"></p>
+  </div>
+
+  <!-- ── REVIEW: confirm action ── -->
+  <div id="stateReviewConfirm" style="display:none">
+    <div class="icon">📋</div>
+    <h2 class="title">Confirm this booking?</h2>
+    <p class="subtitle">Review the details below before confirming.</p>
+    <div class="booking-detail" id="reviewConfirmDetail"></div>
+    <div class="btn-row">
+      <button class="btn-confirm" id="doConfirmBtn">✓ Yes, Confirm Booking</button>
+    </div>
+    <a href="admin.html" class="btn-back">← Back to Dashboard</a>
+  </div>
+
+  <!-- ── REVIEW: decline action ── -->
+  <div id="stateReviewDecline" style="display:none">
+    <div class="icon">📋</div>
+    <h2 class="title">Decline this booking?</h2>
+    <p class="subtitle">Review the details below before declining.</p>
+    <div class="booking-detail" id="reviewDeclineDetail"></div>
+    <div class="btn-row">
+      <button class="btn-decline" id="doDeclineBtn">✕ Yes, Decline Booking</button>
+    </div>
+    <a href="admin.html" class="btn-back">← Back to Dashboard</a>
+  </div>
+
+  <!-- Success: Confirmed -->
+  <div id="stateConfirmed" style="display:none">
+    <div class="icon">✅</div>
+    <h2 class="title success-color">Booking Confirmed</h2>
+    <p class="subtitle">The booking has been confirmed.</p>
+    <div class="booking-detail" id="confirmedDetail"></div>
+    <a href="admin.html" class="btn-back">Go to Dashboard</a>
+  </div>
+
+  <!-- Success: Declined -->
+  <div id="stateDeclined" style="display:none">
+    <div class="icon">❌</div>
+    <h2 class="title" style="color:var(--mid)">Booking Declined</h2>
+    <p class="subtitle">The booking has been cancelled.</p>
+    <div class="booking-detail" id="declinedDetail"></div>
+    <a href="admin.html" class="btn-back">Go to Dashboard</a>
+  </div>
+
+  <!-- Error -->
+  <div id="stateError" style="display:none">
+    <div class="icon">⚠️</div>
+    <h2 class="title error-color">Something went wrong</h2>
+    <p class="subtitle" id="errorMsg">Unable to process this request.</p>
+    <a href="admin.html" class="btn-back">Go to Dashboard</a>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+<script src="js/firebase-config.js"></script>
+<script>
+const params    = new URLSearchParams(window.location.search);
+const bookingId = params.get('id');
+const action    = params.get('action'); // 'confirm' or 'decline'
+
+let db, auth, currentBooking;
+
+function show(stateId) {
+  ['stateLoading','stateLogin','stateReviewConfirm','stateReviewDecline',
+   'stateConfirmed','stateDeclined','stateError'].forEach(id => {
+    document.getElementById(id).style.display = id === stateId ? 'block' : 'none';
+  });
+}
+
+// Client-supplied text goes into innerHTML below — escape it
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function detailHTML(bk) {
+  return `
+    <div class="detail-row"><span class="detail-label">Client</span><span class="detail-val">${esc(bk.name) || '—'}</span></div>
+    <div class="detail-row"><span class="detail-label">Service</span><span class="detail-val">${esc(bk.service) || '—'}</span></div>
+    <div class="detail-row"><span class="detail-label">Date</span><span class="detail-val">${esc(formatDate(bk.date))}</span></div>
+    <div class="detail-row"><span class="detail-label">Time</span><span class="detail-val">${esc(bk.time) || '—'}</span></div>
+    <div class="detail-row"><span class="detail-label">${esc(bk.contactMethod === 'instagram' ? 'Instagram' : 'Phone')}</span><span class="detail-val">${esc(bk.contactHandle) || '—'}</span></div>
+    ${bk.addons?.length ? `<div class="detail-row"><span class="detail-label">Add-ons</span><span class="detail-val">${esc(bk.addons.join(', '))}</span></div>` : ''}
+    ${bk.notes ? `<div class="detail-row"><span class="detail-label">Notes</span><span class="detail-val">${esc(bk.notes)}</span></div>` : ''}
+  `;
+}
+
+function formatDate(dateKey) {
+  if (!dateKey) return '—';
+  const d = new Date(dateKey + 'T12:00:00');
+  return d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+// ── AUTH GATE ────────────────────────────────────────
+// Confirming a booking is a write, and the Firestore rules only allow the
+// owner to write. So this page must be signed in — the email link alone
+// is not proof of identity.
+function initAuthGate() {
+  if (!bookingId || !action) {
+    show('stateError');
+    document.getElementById('errorMsg').textContent = 'Invalid link.';
+    return;
+  }
+  if (!window.firebaseConfig || window.firebaseConfig.apiKey === 'YOUR_API_KEY') {
+    show('stateError');
+    document.getElementById('errorMsg').textContent = 'Firebase not configured.';
+    return;
+  }
+
+  if (!firebase.apps.length) firebase.initializeApp(window.firebaseConfig);
+  db   = firebase.firestore();
+  auth = firebase.auth();
+
+  auth.onAuthStateChanged(user => {
+    if (user) loadBooking();
+    else      show('stateLogin');
+  });
+}
+
+document.getElementById('authBtn').addEventListener('click', async () => {
+  const email = document.getElementById('authEmail').value.trim();
+  const pass  = document.getElementById('authPass').value;
+  const btn   = document.getElementById('authBtn');
+  const err   = document.getElementById('authError');
+
+  if (!email || !pass) { err.textContent = 'Enter your email and password.'; return; }
+
+  err.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  try {
+    await auth.signInWithEmailAndPassword(email, pass);
+    // onAuthStateChanged takes it from here
+  } catch (e) {
+    err.textContent = 'Incorrect email or password.';
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+  }
+});
+
+document.getElementById('authPass').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('authBtn').click();
+});
+
+// ── STEP 1: Load booking and show review screen ──────
+async function loadBooking() {
+  show('stateLoading');
+  try {
+    const snap = await db.collection('bookings').doc(bookingId).get();
+    if (!snap.exists) {
+      show('stateError');
+      document.getElementById('errorMsg').textContent = 'Booking not found.';
+      return;
     }
 
-    function isValidNewBooking() {
-      let d = request.resource.data;
-      return d.status == 'pending'                       // clients cannot self-confirm
-          && d.name is string   && d.name.size() > 0 && d.name.size() <= 60
-          && d.date is string   && d.date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
-          && d.time is string   && d.time.size() <= 12
-          && d.duration is number && d.duration > 0 && d.duration <= 480
-          && d.notes is string  && d.notes.size() <= 500
-          && d.contactHandle is string && d.contactHandle.size() <= 80
-          && d.email is string  && d.email.size() > 0 && d.email.size() <= 120
-          && d.email.matches('.+@.+[.].+');   // confirmation email is required
+    currentBooking = snap.data();
+
+    if (currentBooking.status === 'confirmed' || currentBooking.status === 'cancelled') {
+      show('stateError');
+      document.getElementById('errorMsg').textContent =
+        `This booking has already been ${currentBooking.status}.`;
+      return;
     }
 
-    match /bookings/{bookingId} {
-
-      // Anyone may request a booking, but only a well-formed pending one.
-      allow create: if isValidNewBooking();
-
-      // Fetching ONE booking by its random 20-char ID is how a client checks
-      // their own status. The ID is effectively unguessable.
-      allow get: if true;
-
-      // Listing/querying — needed by the public page to compute availability.
-      // Leave open for now; see the note below to lock it down properly.
-      allow list: if true;
-
-      // Only the owner may change or remove a booking.
-      allow update, delete: if isAdmin();
+    // Show review screen — don't process yet
+    if (action === 'confirm') {
+      document.getElementById('reviewConfirmDetail').innerHTML = detailHTML(currentBooking);
+      show('stateReviewConfirm');
+    } else if (action === 'decline') {
+      document.getElementById('reviewDeclineDetail').innerHTML = detailHTML(currentBooking);
+      show('stateReviewDecline');
+    } else {
+      show('stateError');
     }
 
-    match /settings/{document} {
-      allow read:  if true;      // opening hours, blocked dates, slot overrides
-      allow write: if isAdmin();
-    }
-
-    // Everything else is denied
-    match /{document=**} {
-      allow read, write: if false;
-    }
+  } catch (e) {
+    show('stateError');
+    document.getElementById('errorMsg').textContent = 'Error loading booking.';
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// TO FULLY CLOSE THE READ LEAK
-//
-// Personal data leaks only because the public page must list bookings.
-// Remove that need and you can set `allow list: if isAdmin();`
-//
-// Option A — availability mirror (no paid plan needed)
-//   Keep a public doc per month, e.g. availability/2026-09, holding ONLY
-//   { "2026-09-03": ["7:00 PM"], ... } with no names attached.
-//   Rules: read public, write admin-only.
-//   Trade-off: the admin app must update it whenever a booking changes.
-//
-// Option B — Cloud Function (needs the Blaze plan; free tier is generous)
-//   An onWrite trigger mirrors bookings → availability automatically.
-//   Most robust, nothing for the owner to remember.
-//
-// Also worth doing regardless:
-//   Firebase Console → Authentication → Settings → Authorised domains
-//   Keep only jacob-leee.github.io (and your custom domain). This stops the
-//   API key being used from someone else's site.
+// ── STEP 2a: Confirm button clicked ──────────────────
+document.getElementById('doConfirmBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('doConfirmBtn');
+  btn.disabled = true;
+  btn.textContent = 'Confirming…';
+
+  try {
+    await db.collection('bookings').doc(bookingId).update({
+      status: 'confirmed',
+      confirmedAt: new Date().toISOString()
+    });
+
+    // Send confirmation email to client if email exists
+    if (currentBooking.email &&
+        window._EMAILJS_PUBLIC_KEY !== 'YOUR_EMAILJS_PUBLIC_KEY' &&
+        window._EMAILJS_TEMPLATE_CLIENT_ID !== 'YOUR_CLIENT_TEMPLATE_ID') {
+      emailjs.init(window._EMAILJS_PUBLIC_KEY);
+      await emailjs.send(window._EMAILJS_SERVICE_ID, window._EMAILJS_TEMPLATE_CLIENT_ID, {
+        to_email:    currentBooking.email,
+        client_name: currentBooking.name,
+        service:     currentBooking.service,
+        date:        formatDate(currentBooking.date),
+        time:        currentBooking.time,
+        contact:     (currentBooking.contactMethod || 'Phone') + ': ' + currentBooking.contactHandle,
+        addons:      (currentBooking.addons || []).join(', ') || 'None'
+      }).catch(e => console.warn('Client email failed:', e));
+    }
+
+    document.getElementById('confirmedDetail').innerHTML = detailHTML(currentBooking);
+    show('stateConfirmed');
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '✓ Yes, Confirm Booking';
+    alert('Error confirming booking. Please use the admin dashboard.');
+  }
+});
+
+// ── STEP 2b: Decline button clicked ──────────────────
+document.getElementById('doDeclineBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('doDeclineBtn');
+  btn.disabled = true;
+  btn.textContent = 'Declining…';
+
+  try {
+    await db.collection('bookings').doc(bookingId).update({
+      status: 'cancelled',
+      cancelledAt: new Date().toISOString()
+    });
+
+    document.getElementById('declinedDetail').innerHTML = detailHTML(currentBooking);
+    show('stateDeclined');
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '✕ Yes, Decline Booking';
+    alert('Error declining booking. Please use the admin dashboard.');
+  }
+});
+
+// Start: check who's signed in, then load
+initAuthGate();
+</script>
+</body>
+</html>
