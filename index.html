@@ -207,6 +207,12 @@ body {
   font-family: 'Cormorant Garamond', serif;
   font-size: 18px;
   color: var(--dark);
+  margin-bottom: 4px;
+}
+.duration-note {
+  font-size: 11px;
+  color: var(--light);
+  line-height: 1.5;
   margin-bottom: 14px;
 }
 .time-grid {
@@ -364,6 +370,20 @@ body {
 .my-badge.confirmed { background: rgba(122,140,94,0.2);  color: var(--sage); }
 .my-badge.pending   { background: rgba(122,163,184,0.2); color: #5A8EA8; }
 .my-badge.cancelled { background: rgba(200,120,120,0.18); color: #B06A6A; }
+.my-dismiss {
+  background: none;
+  border: 0.5px solid var(--border);
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  font-size: 14px;
+  color: var(--light);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.my-dismiss:hover { border-color: #B06A6A; color: #B06A6A; }
 
 /* Own booking highlighted in the time grid */
 .time-btn.mine {
@@ -485,6 +505,7 @@ body {
   <div class="section-card hidden" id="timeCard">
     <div class="section-label">Available Times</div>
     <div class="date-heading" id="dateHeading"></div>
+    <p class="duration-note" id="durationNote"></p>
     <div id="timeContent">
       <div class="loading-msg">Loading…</div>
     </div>
@@ -524,6 +545,7 @@ body {
 
     <div class="policy-note">
       📍 1:1 private · Carlingford, Sydney<br>
+      · Please allow about <strong id="policyDuration"></strong> for your appointment<br>
       · You'll get a confirmation email once approved<br>
       · Exact address is sent with that email<br>
       · 48hr cancellation notice appreciated<br>
@@ -608,10 +630,13 @@ const SCHEDULE_WINDOWS = {
 };
 
 function minutesToLabel(min) {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
+  // Wrap past midnight — an end time of 10:30 PM + 90 min used to render as
+  // "13:00 PM" instead of "12:00 AM".
+  const t = ((min % 1440) + 1440) % 1440;
+  const h = Math.floor(t / 60);
+  const m = t % 60;
   const period = h >= 12 ? 'PM' : 'AM';
-  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  const h12 = h % 12 === 0 ? 12 : h % 12;
   // Padded so a :05 slot never renders as "9:5"
   return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 }
@@ -688,6 +713,19 @@ function isSlotBlocked(slotTime, bookings) {
     if (slotMin < bStart && slotMin + SERVICE_DURATION > bStart) return true;
     return false;
   });
+}
+
+// "6:30 PM" → "8:00 PM" (start + one appointment)
+function slotEndLabel(slotTime) {
+  return minutesToLabel(parseTimeToMinutes(slotTime) + SERVICE_DURATION);
+}
+
+// Reads naturally at any value: "45 minutes", "1 hour", "1.5 hours"
+function durationText() {
+  if (SERVICE_DURATION < 60) return `${SERVICE_DURATION} minutes`;
+  const h = SERVICE_DURATION / 60;
+  if (Number.isInteger(h)) return h === 1 ? '1 hour' : `${h} hours`;
+  return `${h} hours`;
 }
 
 function formatDateKey(d) {
@@ -815,6 +853,8 @@ function selectDate(date, dateKey, el) {
   const timeCard = document.getElementById('timeCard');
   timeCard.classList.remove('hidden');
   document.getElementById('dateHeading').textContent = formatDisplayDate(dateKey);
+  document.getElementById('durationNote').textContent =
+    `Each appointment takes about ${durationText()} — the time you pick is your start time.`;
   document.getElementById('timeContent').innerHTML = '<div class="loading-msg">Loading…</div>';
   scrollTo(timeCard);
 
@@ -871,6 +911,8 @@ async function loadTimeSlots(date, dateKey) {
       btn.title = 'Already booked';
     } else {
       btn.textContent = slot.time;
+      // Make it obvious the appointment runs past the start time
+      btn.title = `${slot.time} – ${slotEndLabel(slot.time)} (about ${durationText()})`;
       btn.addEventListener('click', () => selectTime(slot.time, btn));
     }
 
@@ -968,8 +1010,9 @@ function selectTime(time, btn) {
   // Show form
   const formCard = document.getElementById('formCard');
   formCard.classList.remove('hidden');
+  // Show the finish time too — a client picking 8:00 PM should see it runs to 9:30 PM
   document.getElementById('bookingSummary').textContent =
-    `📅 ${formatDisplayDate(state.dateKey)}  ·  ⏰ ${time}`;
+    `📅 ${formatDisplayDate(state.dateKey)}  ·  ⏰ ${time} – ${slotEndLabel(time)}`;
   updateBookBtn();
   scrollTo(formCard);
 }
@@ -1122,7 +1165,7 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
   const successCard = document.getElementById('successCard');
   successCard.classList.remove('hidden');
   document.getElementById('successDetail').textContent =
-    `${formatDisplayDate(state.dateKey)}  ·  ${state.timeSlot}`;
+    `${formatDisplayDate(state.dateKey)}  ·  ${state.timeSlot} – ${slotEndLabel(state.timeSlot)}`;
   scrollTo(successCard);
 
   // Refresh the "Your Bookings" card so the new request appears with its status
@@ -1150,6 +1193,24 @@ function rememberMyBooking(id) {
   } catch (e) { /* private browsing — feature just degrades */ }
 }
 
+function forgetMyBooking(id) {
+  try {
+    localStorage.setItem(MY_KEY, JSON.stringify(getMyIds().filter(x => x !== id)));
+  } catch (e) {}
+}
+
+// Drop IDs we no longer need to track, so the list doesn't grow stale and
+// we stop re-fetching bookings that are already in the past.
+function pruneMyIds(loaded) {
+  try {
+    const todayKey = formatDateKey(new Date());
+    const keep = loaded
+      .filter(b => b.date >= todayKey)     // past appointments fall away
+      .map(b => b.id);
+    localStorage.setItem(MY_KEY, JSON.stringify(keep));
+  } catch (e) {}
+}
+
 async function loadMyBookings() {
   const ids = getMyIds();
   const card = document.getElementById('myCard');
@@ -1165,6 +1226,10 @@ async function loadMyBookings() {
       console.warn('[nailpalette] could not load booking', id, e.message);
     }
   }
+
+  // Forget anything already in the past so this list stays short and we stop
+  // re-reading old bookings from Firestore on every visit.
+  pruneMyIds(results);
 
   // Today and future. Cancelled ones are kept so a client whose request was
   // declined is told, rather than having the row silently disappear.
@@ -1200,12 +1265,31 @@ async function loadMyBookings() {
       'Waiting for nailpalette.syd to confirm';
     when.appendChild(sub);
 
+    const right = document.createElement('div');
+    right.style.cssText = 'display:flex;align-items:center;gap:8px;flex-shrink:0';
+
     const badge = document.createElement('span');
     badge.className = 'my-badge ' + (b.status || 'pending');
     badge.textContent = b.status || 'pending';
+    right.appendChild(badge);
+
+    // A cancelled row is just an FYI — let the client clear it away
+    if (b.status === 'cancelled') {
+      const x = document.createElement('button');
+      x.className = 'my-dismiss';
+      x.type = 'button';
+      x.textContent = '×';
+      x.setAttribute('aria-label', 'Dismiss this cancelled booking');
+      x.title = 'Dismiss';
+      x.addEventListener('click', () => {
+        forgetMyBooking(b.id);
+        loadMyBookings();
+      });
+      right.appendChild(x);
+    }
 
     row.appendChild(when);
-    row.appendChild(badge);
+    row.appendChild(right);
     list.appendChild(row);
   });
 
@@ -1242,7 +1326,7 @@ async function notifyOwner(bk, bookingId) {
       client_name:  bk.name,
       service:      bk.service || 'Not specified',
       date:         formatDisplayDate(bk.date),
-      time:         bk.time,
+      time:         `${bk.time} – ${slotEndLabel(bk.time)}`,
       contact:      bk.contactHandle
                       ? `${bk.contactMethod}: ${bk.contactHandle}`
                       : 'Not provided',
@@ -1326,6 +1410,11 @@ async function checkFullyBookedDays() {
 
 // ── INIT ─────────────────────────────────────
 async function init() {
+  // Appointment length is stated in one place and written into the copy,
+  // so the wording can never drift from SERVICE_DURATION.
+  const pd = document.getElementById('policyDuration');
+  if (pd) pd.textContent = durationText();
+
   // Render immediately so the calendar is never blank while we wait on network
   renderCalendar();
 
