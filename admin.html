@@ -1259,7 +1259,12 @@ async function updateBookingStatus(id, status) {
       // sees the status change when they re-open their booking link.
       showToast(emailed ? '✓ Confirmed & email sent' : '✓ Confirmed');
     } else {
-      showToast('Booking cancelled');
+      // Tell the client their booking was declined
+      const snap = await db.collection('bookings').doc(id).get();
+      const bk = snap.data();
+      const emailed = await sendClientDecline(bk);
+      showToast(emailed ? 'Booking cancelled & client notified'
+                        : 'Booking cancelled — please message the client');
     }
     loadBookings();
   } catch (e) {
@@ -1302,6 +1307,43 @@ async function sendClientConfirmation(bk) {
   }
 }
 
+// Sent when the owner declines/cancels a booking. Previously nothing was sent
+// at all, so a declined client only found out by re-opening the booking page.
+// Returns true only if an email actually went out.
+async function sendClientDecline(bk) {
+  if (!bk.email) return false;
+  if (typeof emailjs === 'undefined') {
+    console.warn('[admin] EmailJS SDK not loaded');
+    return false;
+  }
+  const key = window._EMAILJS_PUBLIC_KEY;
+  const tpl = window._EMAILJS_TEMPLATE_DECLINE_ID;
+  const svc = window._EMAILJS_SERVICE_ID;
+  if (!key || key === 'YOUR_EMAILJS_PUBLIC_KEY' ||
+      !tpl || tpl === 'YOUR_DECLINE_TEMPLATE_ID' || !svc) {
+    console.warn('[admin] Decline email template not configured — skipping');
+    return false;
+  }
+
+  try {
+    emailjs.init(key);
+    const base = window.location.origin +
+                 window.location.pathname.replace(/admin\.html$/, '');
+    await emailjs.send(svc, tpl, {
+      to_email:     bk.email,
+      client_name:  bk.name || 'there',
+      service:      bk.service || 'your appointment',
+      date:         formatDisplayDate(bk.date),
+      time:         bk.time,
+      booking_link: base + 'index.html'
+    });
+    return true;
+  } catch (e) {
+    console.warn('Client decline email failed:', e);
+    return false;
+  }
+}
+
 function updateStats(docs) {
   const today = toDateKey(new Date());   // local, not UTC
   const upcoming = docs.filter(d => d.date >= today);
@@ -1330,10 +1372,12 @@ const SCHEDULE_WINDOWS = {
 };
 
 function minutesToLabel(min) {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
+  // Wrap past midnight so an end time never renders as "13:00 PM"
+  const t = ((min % 1440) + 1440) % 1440;
+  const h = Math.floor(t / 60);
+  const m = t % 60;
   const period = h >= 12 ? 'PM' : 'AM';
-  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  const h12 = h % 12 === 0 ? 12 : h % 12;
   // Pad so 9:05 never renders as "9:5" (the Add-slot form can produce :05)
   return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 }
