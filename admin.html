@@ -1277,6 +1277,39 @@ function updateStats(docs) {
   document.getElementById('statTotal').textContent     = docs.filter(d => d.status !== 'cancelled').length; // all-time total
 }
 
+// ── SHARED SCHEDULE ───────────────────────────────
+// MUST stay identical to SCHEDULE_WINDOWS in index.html. If these drift,
+// saving slot overrides here silently changes what clients can book.
+// [firstBookingStart, lastBookingStart] in 24h decimal hours.
+const SCHEDULE_WINDOWS = {
+  0: [15,   20],    // Sunday    3:00 PM – 8:00 PM
+  1: [18.5, 20],    // Monday    6:30 PM – 8:00 PM
+  2: [18.5, 20],    // Tuesday   6:30 PM – 8:00 PM
+  3: [18.5, 20],    // Wednesday 6:30 PM – 8:00 PM
+  4: [18.5, 20],    // Thursday  6:30 PM – 8:00 PM
+  5: [18.5, 20],    // Friday    6:30 PM – 8:00 PM
+  6: [10,   20]     // Saturday 10:00 AM – 8:00 PM
+};
+
+function minutesToLabel(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  // Pad so 9:05 never renders as "9:5" (the Add-slot form can produce :05)
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+function slotsForDay(dow) {
+  const win = SCHEDULE_WINDOWS[dow];
+  if (!win) return [];
+  const out = [];
+  for (let min = win[0] * 60; min <= win[1] * 60; min += 30) {
+    out.push(minutesToLabel(min));
+  }
+  return out;
+}
+
 // ── SLOT MANAGEMENT ───────────────────────────────
 let currentSlots = [];
 
@@ -1285,17 +1318,7 @@ document.getElementById('loadSlotsBtn').addEventListener('click', async () => {
   if (!dateVal) return;
 
   const dow = new Date(dateVal + 'T12:00:00').getDay();
-  const DEFAULT_SCHEDULE = {
-    0: ['3:00 PM','4:30 PM','6:00 PM'],
-    1: ['7:00 PM','8:00 PM'],
-    2: ['7:00 PM','8:00 PM'],
-    3: ['7:00 PM','8:00 PM'],
-    4: ['7:00 PM','8:00 PM'],
-    5: ['7:00 PM','8:00 PM'],
-    6: ['10:00 AM','11:30 AM','1:00 PM','2:30 PM','4:00 PM','5:30 PM','7:00 PM']
-  };
-
-  currentSlots = [...(DEFAULT_SCHEDULE[dow] || [])];
+  currentSlots = [...slotsForDay(dow)];
 
   if (db) {
     try {
@@ -1311,10 +1334,12 @@ document.getElementById('loadSlotsBtn').addEventListener('click', async () => {
 
 function renderSlots() {
   const list = document.getElementById('slotList');
-  list.innerHTML = currentSlots.map(t => `
+  const sorted = [...currentSlots].sort(
+    (a, b) => parseTimeToMinutes(a) - parseTimeToMinutes(b));
+  list.innerHTML = sorted.map(t => `
     <div class="slot-chip">
-      ${t}
-      <span class="remove-slot" onclick="removeSlot('${t}')">×</span>
+      ${esc(t)}
+      <span class="remove-slot" onclick="removeSlot('${esc(t)}')">×</span>
     </div>
   `).join('');
 }
@@ -1334,7 +1359,9 @@ document.getElementById('addSlotBtn').addEventListener('click', () => {
   const formatted = `${h12}:${m} ${ampm}`;
   if (!currentSlots.includes(formatted)) {
     currentSlots.push(formatted);
-    currentSlots.sort();
+    // Chronological, not alphabetical — a plain .sort() puts "10:00 AM"
+    // after "1:00 PM" because it compares strings character by character.
+    currentSlots.sort((a, b) => parseTimeToMinutes(a) - parseTimeToMinutes(b));
     renderSlots();
   }
 });
@@ -1383,11 +1410,15 @@ document.getElementById('blockVacBtn').addEventListener('click', async () => {
   if (!from || !to) { showToast('Select both dates'); return; }
   if (!db) { showToast('Firebase not configured'); return; }
 
+  if (from > to) { showToast('End date must be after the start date'); return; }
+
   const dates = [];
   let cur = new Date(from + 'T12:00:00');
   const end = new Date(to + 'T12:00:00');
   while (cur <= end) {
-    dates.push(cur.toISOString().split('T')[0]);
+    // Local date key, not toISOString() — the latter converts to UTC and can
+    // shift the day, which would not match the keys the booking page builds.
+    dates.push(toDateKey(cur));
     cur.setDate(cur.getDate() + 1);
   }
 
@@ -1882,6 +1913,11 @@ function parseTimeToMinutes(timeStr) {
   if (period === 'PM' && h !== 12) hours += 12;
   if (period === 'AM' && h === 12) hours = 0;
   return hours * 60 + (m || 0);
+}
+
+// Local YYYY-MM-DD — must match formatDateKey() in index.html
+function toDateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function formatDisplayDate(dateKey) {
