@@ -3,15 +3,16 @@
    Enables offline support & PWA installability
    ══════════════════════════════════════════════ */
 
-const CACHE_NAME = 'nailpalette-v5';
+// Bump this whenever index.html changes, so old copies are evicted.
+const CACHE_NAME = 'nailpalette-v6';
 
-// Files to cache — use scope as base so paths work on GitHub Pages subfolders
+// Files to cache — use scope as base so paths work on GitHub Pages subfolders.
+// index.html now inlines its own CSS and JS, so css/style.css and js/app.js
+// are no longer part of the app and must not be pre-cached.
 const BASE = self.registration ? self.registration.scope : '/';
 const STATIC_ASSETS = [
   BASE,
   BASE + 'index.html',
-  BASE + 'css/style.css',
-  BASE + 'js/app.js',
   BASE + 'js/firebase-config.js',
   BASE + 'manifest.json'
 ];

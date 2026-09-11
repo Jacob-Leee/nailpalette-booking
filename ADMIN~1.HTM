@@ -1254,10 +1254,10 @@ async function updateBookingStatus(id, status) {
     if (status === 'confirmed') {
       const snap = await db.collection('bookings').doc(id).get();
       const bk = snap.data();
-      await sendClientConfirmation(bk);
-      // The client sees the status change when they re-open the booking link.
-      // An email only goes out if they supplied one AND the template is set up.
-      showToast(bk.email ? '✓ Confirmed & email sent' : '✓ Confirmed');
+      const emailed = await sendClientConfirmation(bk);
+      // Only claim an email was sent if one actually was. The client always
+      // sees the status change when they re-open their booking link.
+      showToast(emailed ? '✓ Confirmed & email sent' : '✓ Confirmed');
     } else {
       showToast('Booking cancelled');
     }
@@ -1267,23 +1267,38 @@ async function updateBookingStatus(id, status) {
   }
 }
 
+// Returns true only if an email was actually sent, so the toast can't lie.
 async function sendClientConfirmation(bk) {
-  if (!bk.email) return; // No client email — owner must contact manually
-  if (!window._EMAILJS_PUBLIC_KEY || window._EMAILJS_PUBLIC_KEY === 'YOUR_EMAILJS_PUBLIC_KEY') return;
+  if (!bk.email) return false;              // client gave no email
+  if (typeof emailjs === 'undefined') {
+    console.warn('[admin] EmailJS SDK not loaded');
+    return false;
+  }
+  const key = window._EMAILJS_PUBLIC_KEY;
+  const tpl = window._EMAILJS_TEMPLATE_CLIENT_ID;
+  const svc = window._EMAILJS_SERVICE_ID;
+  // The client template is still a placeholder until it's created in EmailJS
+  if (!key || key === 'YOUR_EMAILJS_PUBLIC_KEY' ||
+      !tpl || tpl === 'YOUR_CLIENT_TEMPLATE_ID' || !svc) {
+    console.warn('[admin] Client email template not configured — skipping');
+    return false;
+  }
 
   try {
-    emailjs.init(window._EMAILJS_PUBLIC_KEY);
-    await emailjs.send(window._EMAILJS_SERVICE_ID, window._EMAILJS_TEMPLATE_CLIENT_ID, {
+    emailjs.init(key);
+    await emailjs.send(svc, tpl, {
       to_email:    bk.email,
       client_name: bk.name,
-      service:     bk.service,
+      service:     bk.service || 'Nail appointment',
       date:        formatDisplayDate(bk.date),
       time:        bk.time,
-      contact:     `${bk.contactMethod}: ${bk.contactHandle}`,
+      contact:     `${bk.contactMethod || 'phone'}: ${bk.contactHandle || '—'}`,
       addons:      bk.addons?.join(', ') || 'None'
     });
+    return true;
   } catch (e) {
     console.warn('Client confirmation email failed:', e);
+    return false;
   }
 }
 
@@ -1645,6 +1660,29 @@ document.getElementById('modalSaveBtn').addEventListener('click', async () => {
     return;
   }
 
+  // The dropdown flags "⚠ overlaps" but saving used to go through silently.
+  // Confirm anything that would clash or land on a day closed to clients.
+  {
+    const warn = [];
+    const newStart = parseTimeToMinutes(time);
+    const newEnd   = newStart + (modalOriginal.duration || 120);
+    const clash = (adminCalBookings[date] || []).some(b => {
+      if (b.id === modalEditId) return false;
+      if (b.status !== 'pending' && b.status !== 'confirmed') return false;
+      const bS = parseTimeToMinutes(b.time);
+      const bE = bS + (parseInt(b.duration) || 120);
+      return newStart < bE && bS < newEnd;
+    });
+    if (clash) warn.push('· Another booking overlaps that time');
+    if (adminBlockedDates.has(date)) warn.push('· That date is marked as vacation');
+    const ov = adminSlotOverrides[date];
+    if (Array.isArray(ov) && ov.length === 0) warn.push('· That date has no slots (closed)');
+
+    if (warn.length && !confirm(`Heads up:\n\n${warn.join('\n')}\n\nSave anyway?`)) {
+      return;
+    }
+  }
+
   // Only the fields the modal actually edits. Editing must not clobber
   // contactMethod / addons / price / createdAt that came from the client.
   const data = {
@@ -1880,18 +1918,47 @@ function renderAdminCalendar() {
       el.classList.remove('drag-over');
       if (!dragBookingId || !db) return;
       const newDate = el.dataset.dateKey;
-      if (newDate === dragBookingData.date) return;
+      if (newDate === dragBookingData.date) { dragBookingId = null; return; }
+
+      // Warn before creating a clash, moving into the past, or landing on a
+      // day that is closed to clients. Previously all of these went through
+      // silently and could produce a double booking.
+      const movedTime = dragBookingData.time;
+      const clash = (adminCalBookings[newDate] || []).some(b => {
+        if (b.id === dragBookingId) return false;
+        const aS = parseTimeToMinutes(movedTime);
+        const aE = aS + (parseInt(dragBookingData.duration) || 120);
+        const bS = parseTimeToMinutes(b.time);
+        const bE = bS + (parseInt(b.duration) || 120);
+        return aS < bE && bS < aE;          // overlapping intervals
+      });
+
+      const warnings = [];
+      if (clash) warnings.push('· Another booking overlaps that time');
+      if (adminBlockedDates.has(newDate)) warnings.push('· That date is marked as vacation');
+      const ov = adminSlotOverrides[newDate];
+      if (Array.isArray(ov) && ov.length === 0) warnings.push('· That date has no slots (closed)');
+      if (newDate < toDateKey(new Date())) warnings.push('· That date is in the past');
+
+      if (warnings.length) {
+        const ok = confirm(
+          `Move ${dragBookingData.name || 'this booking'} (${movedTime}) to ` +
+          `${formatDisplayDate(newDate)}?\n\n${warnings.join('\n')}\n\nMove anyway?`);
+        if (!ok) { dragBookingId = null; return; }
+      }
+
       try {
         await db.collection('bookings').doc(dragBookingId).update({ date: newDate });
         showToast('✓ Moved to ' + formatDisplayDate(newDate));
-        dragBookingId = null;
         calInitialized = false;
         await fetchCalBookings();
         renderAdminCalendar();
         showCalDay(newDate, adminCalBookings[newDate] || [], document.querySelector(`[data-date-key="${newDate}"]`) || el);
         loadBookings();
       } catch (err) {
-        showToast('Move failed');
+        showToast('Move failed: ' + err.message);
+      } finally {
+        dragBookingId = null;   // always clear, even if the move failed
       }
     });
 

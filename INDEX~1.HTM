@@ -237,6 +237,12 @@ body {
   cursor: not-allowed;
   text-decoration: line-through;
 }
+/* Too soon to book today — not taken, so don't strike it through */
+.time-btn.too-soon {
+  text-decoration: none;
+  opacity: 0.4;
+  font-style: italic;
+}
 .loading-msg, .no-slots-msg {
   font-size: 13px;
   color: var(--light);
@@ -709,10 +715,17 @@ calDate.setDate(1);
 
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
-const today = new Date();
-today.setHours(0,0,0,0);
+
+// Recomputed on every render — a PWA left open overnight used to keep
+// treating the previous day as bookable.
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
 
 function renderCalendar() {
+  const today = startOfToday();
   const year = calDate.getFullYear();
   const month = calDate.getMonth();
   document.getElementById('calMonth').textContent = `${MONTHS[month]} ${year}`;
@@ -743,8 +756,9 @@ function renderCalendar() {
 
     if (date.getTime() === today.getTime()) el.classList.add('today');
 
-    // Does this device have a booking on this day?
-    const mine = myBookings.find(b => b.date === dateKey);
+    // Does this device have a LIVE booking on this day? A cancelled one is
+    // still listed in the card above, but must not mark the calendar.
+    const mine = myBookings.find(b => b.date === dateKey && b.status !== 'cancelled');
 
     if (isPast || isBlocked || !hasSlots || isFullyBooked) {
       el.classList.add(isPast ? 'past' : 'unavailable');
@@ -842,6 +856,11 @@ async function loadTimeSlots(date, dateKey) {
       btn.classList.add('mine');
       btn.textContent = `${slot.time} · ${slot.status === 'confirmed' ? 'Yours ✓' : 'Yours (pending)'}`;
       btn.title = 'Your booking';
+    } else if (slot.reason === 'past') {
+      // Today only — too soon to book, NOT taken by anyone
+      btn.classList.add('too-soon');
+      btn.textContent = `${slot.time} · too soon`;
+      btn.title = 'Please book at least an hour ahead';
     } else if (slot.booked) {
       // Someone else's booking — time is shown, identity is not
       btn.textContent = `${slot.time} · ✱✱✱`;
@@ -857,11 +876,16 @@ async function loadTimeSlots(date, dateKey) {
   content.innerHTML = '';
   content.appendChild(grid);
 
-  // If every slot is taken, say so rather than showing a wall of dead buttons
+  // If nothing is selectable, explain WHY rather than showing dead buttons
   if (slots.every(s => s.booked)) {
     const msg = document.createElement('div');
     msg.className = 'no-slots-msg';
-    msg.textContent = 'Fully booked — please choose another date.';
+    // Late in the evening every slot is merely "too soon", which is not
+    // the same thing as the day being full.
+    const anyTaken = slots.some(s => s.reason === 'taken' || s.mine);
+    msg.textContent = anyTaken
+      ? 'Fully booked — please choose another date.'
+      : 'No more times today — please choose another date.';
     content.appendChild(msg);
   }
 }
@@ -905,10 +929,15 @@ async function fetchAvailableSlots(date, dateKey) {
       console.log(`[nailpalette] ${dateKey}: ${booked.length} existing booking(s)`);
 
       return rawSlots.map(slotTime => {
-        const own = booked.find(b => b.mine && b.time === slotTime);
+        const own    = booked.find(b => b.mine && b.time === slotTime);
+        const taken  = isSlotBlocked(slotTime, booked);
+        const tooLate = isSlotInPast(slotTime, dateKey);
         return {
           time:   slotTime,
-          booked: isSlotBlocked(slotTime, booked) || isSlotInPast(slotTime, dateKey),
+          booked: taken || tooLate,
+          // Keep the two reasons apart — a slot that is merely too soon must
+          // not be labelled "already booked".
+          reason: taken ? 'taken' : (tooLate ? 'past' : null),
           mine:   !!own,
           status: own ? own.status : null
         };
@@ -920,7 +949,10 @@ async function fetchAvailableSlots(date, dateKey) {
     console.error('[nailpalette] window._db is not set — Firebase did not initialise.');
   }
 
-  return rawSlots.map(time => ({ time, booked: isSlotInPast(time, dateKey) }));
+  return rawSlots.map(time => {
+    const tooLate = isSlotInPast(time, dateKey);
+    return { time, booked: tooLate, reason: tooLate ? 'past' : null };
+  });
 }
 
 // ── TIME SELECTION ───────────────────────────
@@ -1130,10 +1162,11 @@ async function loadMyBookings() {
     }
   }
 
-  // Only show today and future
+  // Today and future. Cancelled ones are kept so a client whose request was
+  // declined is told, rather than having the row silently disappear.
   const todayKey = formatDateKey(new Date());
   myBookings = results
-    .filter(b => b.date >= todayKey && b.status !== 'cancelled')
+    .filter(b => b.date >= todayKey)
     .sort((a, b) => a.date === b.date
       ? parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time)
       : (a.date < b.date ? -1 : 1));
@@ -1157,9 +1190,10 @@ async function loadMyBookings() {
     when.className = 'my-when';
     when.textContent = `${formatDisplayDate(b.date)} · ${b.time}`;
     const sub = document.createElement('small');
-    sub.textContent = b.status === 'confirmed'
-      ? 'See you then!'
-      : 'Waiting for nailpalette.syd to confirm';
+    sub.textContent =
+      b.status === 'confirmed' ? 'See you then!' :
+      b.status === 'cancelled' ? 'This booking was cancelled — please pick another time' :
+      'Waiting for nailpalette.syd to confirm';
     when.appendChild(sub);
 
     const badge = document.createElement('span');
