@@ -1314,6 +1314,11 @@ function updateStats(docs) {
 // MUST stay identical to SCHEDULE_WINDOWS in index.html. If these drift,
 // saving slot overrides here silently changes what clients can book.
 // [firstBookingStart, lastBookingStart] in 24h decimal hours.
+// Appointment length in minutes — MUST match SERVICE_DURATION in index.html.
+// Must also fit inside the daily window below, or later start times become
+// unusable (a 120-min service in a 6:30–8:00 PM window blocked the whole day).
+const SERVICE_DURATION = 90;
+
 const SCHEDULE_WINDOWS = {
   0: [15,   20],    // Sunday    3:00 PM – 8:00 PM
   1: [18.5, 20],    // Monday    6:30 PM – 8:00 PM
@@ -1537,7 +1542,7 @@ async function populateAdminTimeSelect(dateKey, excludeBookingId = null) {
         .filter(b => b.status === 'pending' || b.status === 'confirmed')
         .map(b => ({
           time:     b.time,
-          duration: parseInt(b.duration) || 120
+          duration: parseInt(b.duration) || SERVICE_DURATION
         }));
     } catch (e) {
       console.warn('Could not fetch bookings for time check', e);
@@ -1560,19 +1565,19 @@ async function populateAdminTimeSelect(dateKey, excludeBookingId = null) {
     }
   }
 
-  const BUFFER      = 90;   // minutes buffer before/after each booking
-  const NEW_DURATION = 120; // assume 2-hr service for admin manual bookings
+  // One definition of "conflict", shared with the save check and drag-drop:
+  // a genuine overlap of two appointment intervals. Previously this used an
+  // extra 90-min buffer, so it flagged far more times than actually clashed.
+  const NEW_DURATION = SERVICE_DURATION;
 
   generate30MinSlots(9, 22).forEach(slotTime => {
     const slotMin = parseTimeToMinutes(slotTime);
 
-    // Slot is blocked if it falls within 90 min of any existing booking's window
+    // Flagged when the two appointment intervals genuinely overlap
     const isBlocked = existingBookings.some(b => {
       const bStart = parseTimeToMinutes(b.time);
-      const bEnd   = bStart + (parseInt(b.duration) || 120);
-      // Available only if new booking ends (+ buffer) before bStart,
-      // OR new booking starts (after buffer) after bEnd.
-      return !(slotMin + NEW_DURATION + BUFFER <= bStart || slotMin >= bEnd + BUFFER);
+      const bEnd   = bStart + (parseInt(b.duration) || SERVICE_DURATION);
+      return slotMin < bEnd && bStart < slotMin + NEW_DURATION;
     });
 
     // Admin can always pick any time — conflicts are flagged, not blocked
@@ -1665,12 +1670,12 @@ document.getElementById('modalSaveBtn').addEventListener('click', async () => {
   {
     const warn = [];
     const newStart = parseTimeToMinutes(time);
-    const newEnd   = newStart + (modalOriginal.duration || 120);
+    const newEnd   = newStart + (modalOriginal.duration || SERVICE_DURATION);
     const clash = (adminCalBookings[date] || []).some(b => {
       if (b.id === modalEditId) return false;
       if (b.status !== 'pending' && b.status !== 'confirmed') return false;
       const bS = parseTimeToMinutes(b.time);
-      const bE = bS + (parseInt(b.duration) || 120);
+      const bE = bS + (parseInt(b.duration) || SERVICE_DURATION);
       return newStart < bE && bS < newEnd;
     });
     if (clash) warn.push('· Another booking overlaps that time');
@@ -1688,7 +1693,7 @@ document.getElementById('modalSaveBtn').addEventListener('click', async () => {
   const data = {
     name, service, date, time, status, notes, email,
     contactHandle: phone,
-    duration: modalOriginal.duration || 120  // used by slot-blocking logic
+    duration: modalOriginal.duration || SERVICE_DURATION  // used by slot-blocking logic
   };
 
   if (modalEditId) {
@@ -1927,9 +1932,9 @@ function renderAdminCalendar() {
       const clash = (adminCalBookings[newDate] || []).some(b => {
         if (b.id === dragBookingId) return false;
         const aS = parseTimeToMinutes(movedTime);
-        const aE = aS + (parseInt(dragBookingData.duration) || 120);
+        const aE = aS + (parseInt(dragBookingData.duration) || SERVICE_DURATION);
         const bS = parseTimeToMinutes(b.time);
-        const bE = bS + (parseInt(b.duration) || 120);
+        const bE = bS + (parseInt(b.duration) || SERVICE_DURATION);
         return aS < bE && bS < aE;          // overlapping intervals
       });
 
