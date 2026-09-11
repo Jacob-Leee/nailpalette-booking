@@ -539,6 +539,21 @@ body {
   display: block;
   max-width: 100%;
 }
+/* Days closed to clients — vacation or all slots removed */
+.admin-cal-day.vacation-day,
+.admin-cal-day.closed-day {
+  background: rgba(190,150,150,0.10);
+  border-color: rgba(190,150,150,0.35);
+}
+.acd-closed {
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #B06A6A;
+  text-align: center;
+  margin-bottom: 2px;
+}
+
 /* Desktop shows "7:00 PM Name"; mobile swaps to compact "7p" */
 .acd-time-short { display: none; }
 .acd-dot.dot-pending   { background: rgba(122,163,184,0.22); color: #5A8EA8; }
@@ -1038,6 +1053,7 @@ body {
     <div class="modal-field">
       <label class="modal-label">Date *</label>
       <input class="modal-input" id="mDate" type="date" style="color-scheme:light">
+      <div id="mDateWarning" style="display:none;font-size:11px;color:#B06A6A;margin-top:6px;line-height:1.5"></div>
     </div>
     <div class="modal-field">
       <label class="modal-label">Time *</label>
@@ -1186,7 +1202,9 @@ async function loadBookings() {
 
 function renderBookings(docs) {
   const list = document.getElementById('bookingList');
-  const today = new Date().toISOString().split('T')[0];
+  // Local date — toISOString() is UTC and reads as "yesterday" in Sydney
+  // between midnight and ~10am, which kept stale bookings in this list.
+  const today = toDateKey(new Date());
   const upcoming = docs
     .filter(d => d.date >= today && d.status !== 'cancelled')
     .sort((a, b) => {
@@ -1270,7 +1288,7 @@ async function sendClientConfirmation(bk) {
 }
 
 function updateStats(docs) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = toDateKey(new Date());   // local, not UTC
   const upcoming = docs.filter(d => d.date >= today);
   document.getElementById('statPending').textContent   = upcoming.filter(d => d.status === 'pending').length;
   document.getElementById('statConfirmed').textContent = upcoming.filter(d => d.status === 'confirmed').length;
@@ -1368,12 +1386,19 @@ document.getElementById('addSlotBtn').addEventListener('click', () => {
 
 document.getElementById('saveSlotsBtn').addEventListener('click', async () => {
   const dateVal = document.getElementById('slotDateInput').value;
+  if (!dateVal) { showToast('Pick a date first'); return; }
   if (!db) { showToast('Firebase not configured'); return; }
   try {
     await db.collection('settings').doc('slots_' + dateVal).set({ slots: currentSlots });
-    showToast('✓ Slots saved');
+    showToast(currentSlots.length
+      ? `✓ ${currentSlots.length} slot(s) saved`
+      : '✓ Day closed — no slots available to clients');
+    // Refresh the calendar so the change is visible straight away
+    calInitialized = false;
+    await fetchCalBookings();
+    renderAdminCalendar();
   } catch (e) {
-    showToast('Error saving slots');
+    showToast('Error saving slots: ' + e.message);
   }
 });
 
@@ -1429,6 +1454,9 @@ document.getElementById('blockVacBtn').addEventListener('click', async () => {
     await db.collection('settings').doc('blocked_dates').set({ dates: merged });
     showToast(`✓ Blocked ${dates.length} date(s)`);
     loadBlockedDates();
+    calInitialized = false;
+    await fetchCalBookings();
+    renderAdminCalendar();
   } catch (e) {
     showToast('Error blocking dates');
   }
@@ -1443,6 +1471,9 @@ async function unblockDate(date) {
     await db.collection('settings').doc('blocked_dates').set({ dates: updated });
     showToast('✓ Date unblocked');
     loadBlockedDates();
+    calInitialized = false;
+    await fetchCalBookings();
+    renderAdminCalendar();
   } catch (e) {}
 }
 
@@ -1495,6 +1526,22 @@ async function populateAdminTimeSelect(dateKey, excludeBookingId = null) {
         }));
     } catch (e) {
       console.warn('Could not fetch bookings for time check', e);
+    }
+  }
+
+  // Tell the owner when this date is closed to clients — they can still book
+  // it deliberately, but shouldn't do so by accident.
+  const warnEl = document.getElementById('mDateWarning');
+  if (warnEl) {
+    const override = adminSlotOverrides[dateKey];
+    if (adminBlockedDates.has(dateKey)) {
+      warnEl.textContent = '⚠ This date is marked as vacation — clients cannot book it.';
+      warnEl.style.display = 'block';
+    } else if (Array.isArray(override) && override.length === 0) {
+      warnEl.textContent = '⚠ All slots removed for this date — clients cannot book it.';
+      warnEl.style.display = 'block';
+    } else {
+      warnEl.style.display = 'none';
     }
   }
 
@@ -1686,6 +1733,10 @@ let adminCalDate = new Date();
 adminCalDate.setDate(1);
 let adminCalBookings = {};   // { 'YYYY-MM-DD': [booking, ...] }
 let calInitialized = false;
+// Vacation days and closed/custom slot days, so the calendar can show them.
+// Without these the owner could book a client into a day they'd blocked off.
+let adminBlockedDates = new Set();
+let adminSlotOverrides = {};   // { 'YYYY-MM-DD': [times] }  [] = closed
 
 async function initAdminCalendar() {
   if (!calInitialized) {
@@ -1706,6 +1757,23 @@ async function fetchCalBookings() {
     };
     return;
   }
+  // Vacation days + slot overrides, so the calendar reflects them
+  try {
+    const setSnap = await db.collection('settings').get();
+    adminBlockedDates = new Set();
+    adminSlotOverrides = {};
+    setSnap.docs.forEach(d => {
+      if (d.id === 'blocked_dates') {
+        adminBlockedDates = new Set(d.data().dates || []);
+      } else if (d.id.startsWith('slots_')) {
+        const s = d.data();
+        if (s && Array.isArray(s.slots)) adminSlotOverrides[d.id.slice(6)] = s.slots;
+      }
+    });
+  } catch (e) {
+    console.warn('Could not load settings for calendar:', e);
+  }
+
   try {
     // Single-field fetch, status filtered client-side (no composite index needed)
     const snap = await db.collection('bookings').get();
@@ -1734,7 +1802,7 @@ function renderAdminCalendar() {
 
   const firstDay   = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const todayKey   = new Date().toISOString().split('T')[0];
+  const todayKey   = toDateKey(new Date());   // local, not UTC
 
   const grid = document.getElementById('adminCalGrid');
   grid.innerHTML = '';
@@ -1750,15 +1818,30 @@ function renderAdminCalendar() {
     const bks = adminCalBookings[dateKey] || [];
     const isPast = dateKey < todayKey;
     const el  = document.createElement('div');
+    const isVacation = adminBlockedDates.has(dateKey);
+    const override   = adminSlotOverrides[dateKey];
+    const isClosed   = Array.isArray(override) && override.length === 0;
+
     el.className = 'admin-cal-day clickable'
       + (dateKey === todayKey ? ' today-day' : '')
-      + (isPast ? ' past-day' : '');
+      + (isPast ? ' past-day' : '')
+      + (isVacation ? ' vacation-day' : '')
+      + (isClosed ? ' closed-day' : '');
     el.dataset.dateKey = dateKey;
+    if (isVacation)   el.title = 'Vacation — blocked for clients';
+    else if (isClosed) el.title = 'All slots removed — closed for clients';
 
     const numEl = document.createElement('div');
     numEl.className = 'acd-num';
     numEl.textContent = d;
     el.appendChild(numEl);
+
+    if (isVacation || isClosed) {
+      const tag = document.createElement('div');
+      tag.className = 'acd-closed';
+      tag.textContent = isVacation ? 'VAC' : 'CLOSED';
+      el.appendChild(tag);
+    }
 
     if (bks.length > 0) {
       el.classList.add('has-bookings');
