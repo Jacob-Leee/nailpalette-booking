@@ -235,7 +235,7 @@ body {
   <div id="stateDeclined" style="display:none">
     <div class="icon">❌</div>
     <h2 class="title" style="color:var(--mid)">Booking Declined</h2>
-    <p class="subtitle">The booking has been cancelled.</p>
+    <p class="subtitle">The booking has been cancelled.<br><span id="declinedNote"></span></p>
     <div class="booking-detail" id="declinedDetail"></div>
     <a href="admin.html" class="btn-back">Go to Dashboard</a>
   </div>
@@ -451,6 +451,38 @@ function reportError(what, e) {
   alert(msg);
 }
 
+// Notify the client that their request was declined.
+// Returns true only if an email actually went out.
+async function sendClientDecline(bk) {
+  if (!bk || !bk.email) return false;
+  if (typeof emailjs === 'undefined') return false;
+  const key = window._EMAILJS_PUBLIC_KEY;
+  const tpl = window._EMAILJS_TEMPLATE_DECLINE_ID;
+  const svc = window._EMAILJS_SERVICE_ID;
+  if (!key || key === 'YOUR_EMAILJS_PUBLIC_KEY' ||
+      !tpl || tpl === 'YOUR_DECLINE_TEMPLATE_ID' || !svc) {
+    console.warn('[nailpalette] Decline template not configured — client not emailed');
+    return false;
+  }
+  try {
+    emailjs.init(key);
+    const base = window.location.origin +
+                 window.location.pathname.replace(/action\.html$/, '');
+    await emailjs.send(svc, tpl, {
+      to_email:     bk.email,
+      client_name:  bk.name || 'there',
+      service:      bk.service || 'your appointment',
+      date:         formatDate(bk.date),
+      time:         bk.time,
+      booking_link: base + 'index.html'
+    });
+    return true;
+  } catch (e) {
+    console.warn('[nailpalette] Decline email failed:', e);
+    return false;
+  }
+}
+
 // ── STEP 2b: Decline button clicked ──────────────────
 document.getElementById('doDeclineBtn').addEventListener('click', async () => {
   const btn = document.getElementById('doDeclineBtn');
@@ -463,7 +495,18 @@ document.getElementById('doDeclineBtn').addEventListener('click', async () => {
       cancelledAt: new Date().toISOString()
     });
 
+    // Let the client know — without this they'd never be told
+    const emailed = await sendClientDecline(currentBooking);
+
     document.getElementById('declinedDetail').innerHTML = detailHTML(currentBooking);
+    const note = document.getElementById('declinedNote');
+    if (note) {
+      note.textContent = emailed
+        ? 'The client has been emailed.'
+        : (currentBooking.email
+            ? 'Could not email the client — please message them directly.'
+            : 'No email on file — please message the client directly.');
+    }
     show('stateDeclined');
   } catch (e) {
     btn.disabled = false;
