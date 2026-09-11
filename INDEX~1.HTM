@@ -606,7 +606,8 @@ function minutesToLabel(min) {
   const m = min % 60;
   const period = h >= 12 ? 'PM' : 'AM';
   const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${h12}:${m === 0 ? '00' : m} ${period}`;
+  // Padded so a :05 slot never renders as "9:5"
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
 // Build 30-min slot list for a given day of week
