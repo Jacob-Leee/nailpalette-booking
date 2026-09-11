@@ -636,6 +636,9 @@ let state = {
 
 let blockedDates     = new Set();
 let fullyBookedDates = new Set();
+// Per-date slot overrides from the admin's Manage Slots tab:
+//   { "2026-09-19": ["7:00 PM", ...] }  — an empty array means the day is closed
+let slotOverrides    = {};
 // Bookings made from THIS device — [{id, date, time, status}]
 let myBookings       = [];
 
@@ -1225,6 +1228,23 @@ async function checkFullyBookedDays() {
   const lastDay  = `${year}-${String(month+1).padStart(2,'0')}-${String(new Date(year, month+1, 0).getDate()).padStart(2,'0')}`;
 
   try {
+    // Load per-date slot overrides saved from the admin's "Manage Slots" tab.
+    // Without these, a day whose slots were all removed still looked open.
+    slotOverrides = {};
+    try {
+      const setSnap = await withTimeout(
+        window._db.collection('settings').get(), 6000, 'slot overrides');
+      setSnap.docs.forEach(d => {
+        if (!d.id.startsWith('slots_')) return;
+        const data = d.data();
+        if (data && Array.isArray(data.slots)) {
+          slotOverrides[d.id.slice(6)] = data.slots;   // "slots_2026-09-19" → "2026-09-19"
+        }
+      });
+    } catch (e) {
+      console.warn('[nailpalette] slot overrides skipped:', e.message);
+    }
+
     // Fetch all bookings; filter status + date range client-side (no index needed)
     const snap = await withTimeout(
       window._db.collection('bookings').get(), 8000, 'month bookings');
@@ -1240,10 +1260,23 @@ async function checkFullyBookedDays() {
     });
 
     fullyBookedDates = new Set();
+
+    // 1) Any date whose override leaves no slots at all is closed outright,
+    //    even if nobody has booked it.
+    Object.entries(slotOverrides).forEach(([dk, slots]) => {
+      if (dk >= firstDay && dk <= lastDay && slots.length === 0) {
+        fullyBookedDates.add(dk);
+      }
+    });
+
+    // 2) Dates where every remaining slot is taken by a booking
     Object.entries(byDate).forEach(([dk, bks]) => {
-      const dow   = new Date(dk + 'T12:00:00').getDay();
-      const slots = DEFAULT_SCHEDULE[dow] || [];
-      if (!slots.length) return;
+      const dow = new Date(dk + 'T12:00:00').getDay();
+      // Respect the override for this date, else the weekly schedule
+      const slots = slotOverrides[dk] !== undefined
+        ? slotOverrides[dk]
+        : (DEFAULT_SCHEDULE[dow] || []);
+      if (!slots.length) { fullyBookedDates.add(dk); return; }
       // Uses the exact same rule as the time-slot list
       const allBlocked = slots.every(slotTime => isSlotBlocked(slotTime, bks));
       if (allBlocked) fullyBookedDates.add(dk);
