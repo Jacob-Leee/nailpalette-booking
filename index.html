@@ -659,8 +659,12 @@ function parseTimeToMinutes(t) {
   return hrs * 60 + (m || 0);
 }
 
-// Default service length — a new booking occupies this many minutes
-const SERVICE_DURATION = 120;
+// How long one appointment occupies the chair, including setup and cleanup.
+// This MUST fit inside the daily window in SCHEDULE_WINDOWS, otherwise the
+// later start times can never actually be used.
+// Weekday window is 6:30–8:00 PM (90 min), so 90 is the largest value that
+// still leaves the 8:00 PM slot bookable after a 6:30 PM booking.
+const SERVICE_DURATION = 90;
 
 // Single source of truth for "is this slot unavailable?".
 // Used by BOTH the time-slot list and the fully-booked calendar check,
@@ -921,7 +925,7 @@ async function fetchAvailableSlots(date, dateKey) {
         .filter(b => b.status === 'pending' || b.status === 'confirmed')
         .map(b => ({
           time:     b.time,
-          duration: parseInt(b.duration) || 120,
+          duration: parseInt(b.duration) || SERVICE_DURATION,
           mine:     myIds.includes(b.id),
           status:   b.status
         }));
@@ -1065,7 +1069,7 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
     contactHandle: handle,
     service:       '',
     status:        'pending',
-    duration:      120,
+    duration:      SERVICE_DURATION,
     addons:        [],
     notes:         notes,
     email:         email,
@@ -1289,7 +1293,7 @@ async function checkFullyBookedDays() {
       if (bk.status !== 'pending' && bk.status !== 'confirmed') return;
       if (bk.date >= firstDay && bk.date <= lastDay) {
         if (!byDate[bk.date]) byDate[bk.date] = [];
-        byDate[bk.date].push({ time: bk.time, duration: parseInt(bk.duration) || 120 });
+        byDate[bk.date].push({ time: bk.time, duration: parseInt(bk.duration) || SERVICE_DURATION });
       }
     });
 
