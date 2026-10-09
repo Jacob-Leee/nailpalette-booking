@@ -940,6 +940,10 @@ function renderSlots(slots, date, dateKey) {
       // Make it obvious the appointment runs past the start time
       btn.title = `${slot.time} – ${slotEndLabel(slot.time)} (about ${durationText()})`;
       btn.addEventListener('click', () => selectTime(slot.time, btn));
+      // Keep the client's choice highlighted across a background redraw
+      if (state.dateKey === dateKey && state.timeSlot === slot.time) {
+        btn.classList.add('selected');
+      }
     }
 
     grid.appendChild(btn);
@@ -947,6 +951,21 @@ function renderSlots(slots, date, dateKey) {
 
   content.innerHTML = '';
   content.appendChild(grid);
+
+  // If a background refresh shows the chosen time has since been taken,
+  // drop the choice and close the form rather than leaving it half-valid.
+  if (state.dateKey === dateKey && state.timeSlot) {
+    const chosen = slots.find(s => s.time === state.timeSlot);
+    if (!chosen || chosen.booked) {
+      state.timeSlot = null;
+      document.getElementById('formCard').classList.add('hidden');
+      updateBookBtn();
+      const note = document.createElement('div');
+      note.className = 'no-slots-msg';
+      note.textContent = 'The time you picked was just taken — please choose another.';
+      content.appendChild(note);
+    }
+  }
 
   // If nothing is selectable, explain WHY rather than showing dead buttons
   if (slots.every(s => s.booked)) {
@@ -1174,21 +1193,34 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
       window._db.collection('bookings').where('date', '==', state.dateKey).get(),
       8000, 'availability re-check');
     const taken = fresh.docs
-      .map(d => d.data())
+      .map(d => ({ id: d.id, ...d.data() }))
       .filter(b => b.status === 'pending' || b.status === 'confirmed')
-      .map(b => ({ time: b.time, duration: parseInt(b.duration) || SERVICE_DURATION }));
+      .map(b => ({ id: b.id, time: b.time, status: b.status,
+                   duration: parseInt(b.duration) || SERVICE_DURATION }));
+
+    // Whatever happens next, the cache must reflect what the server just said —
+    // otherwise the grid redraws from stale data and shows the taken slot as free.
+    if (bookingsByDate) bookingsByDate[state.dateKey] = taken;
 
     if (isSlotBlocked(state.timeSlot, taken)) {
       alert('Sorry — that time was just taken. Please pick another slot.');
       btn.disabled = false;
       btn.textContent = 'Request Booking →';
-      await loadTimeSlots(state.date, state.dateKey);   // refresh the grid
+      state.timeSlot = null;
+      document.getElementById('formCard').classList.add('hidden');
+      await loadTimeSlots(state.date, state.dateKey);   // redraw from fresh data
       return;
     }
 
     const ref = await withTimeout(
       window._db.collection('bookings').add(data), 12000, 'saving booking');
     rememberMyBooking(ref.id);          // so this device can track its status
+    // Add the new booking to the cache so the slot reads as taken straight away
+    if (bookingsByDate) {
+      (bookingsByDate[state.dateKey] = bookingsByDate[state.dateKey] || []).push({
+        id: ref.id, time: data.time, status: data.status, duration: data.duration
+      });
+    }
     // Fire-and-forget: a failed email must never break a saved booking
     notifyOwner(data, ref.id);
   } catch (e) {
