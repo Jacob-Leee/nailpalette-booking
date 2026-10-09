@@ -564,6 +564,10 @@ body {
       <p class="success-msg">Your request has been sent to <strong>nailpalette.syd</strong>.<br>
       You'll get a confirmation email once it's approved — check your junk folder too.<br>
       You can also re-open this page any time to see the status.</p>
+      <button class="btn-book" id="bookAnotherBtn" type="button"
+              style="background:none;border:0.5px solid var(--sage);color:var(--sage);margin:4px 0 22px">
+        Book another appointment
+      </button>
       <div class="success-contact">
         <div>📸 <a href="https://instagram.com/nailpalette.syd" target="_blank">@nailpalette.syd</a></div>
         <div>💬 KakaoTalk: Nailpalette_syd</div>
@@ -589,7 +593,7 @@ body {
 /* ══════════════════════════════════════════════
    nailpalette.syd — Single Page Booking
    ══════════════════════════════════════════════ */
-const APP_VERSION = 'v6-instant';
+const APP_VERSION = 'v7-recheck';
 console.log('[nailpalette] build', APP_VERSION);
 
 // ── FIREBASE INIT ─────────────────────────────
@@ -776,6 +780,13 @@ function renderCalendar() {
   const month = calDate.getMonth();
   document.getElementById('calMonth').textContent = `${MONTHS[month]} ${year}`;
 
+  // The ‹ button does nothing on the current month, so show it as disabled
+  const atCurrentMonth = year === today.getFullYear() && month === today.getMonth();
+  const prevBtn = document.getElementById('prevMonth');
+  prevBtn.disabled = atCurrentMonth;
+  prevBtn.style.opacity = atCurrentMonth ? '0.3' : '';
+  prevBtn.style.cursor  = atCurrentMonth ? 'default' : '';
+
   const firstDay    = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const grid = document.getElementById('calGrid');
@@ -796,7 +807,13 @@ function renderCalendar() {
     const isPast        = date < today;
     const dateKey       = formatDateKey(date);
     const isBlocked     = blockedDates.has(dateKey);
-    const isFullyBooked = fullyBookedDates.has(dateKey);
+    let isFullyBooked = fullyBookedDates.has(dateKey);
+    // Today: grey it out once every remaining slot is too soon or taken,
+    // instead of letting the client tap in to find nothing.
+    if (!isFullyBooked && date.getTime() === today.getTime()) {
+      const todaySlots = buildSlots(date, dateKey, (bookingsByDate && bookingsByDate[dateKey]) || []);
+      if (todaySlots.length && todaySlots.every(s => s.booked)) isFullyBooked = true;
+    }
     const dow           = date.getDay();
     const hasSlots      = DEFAULT_SCHEDULE[dow] && DEFAULT_SCHEDULE[dow].length > 0;
 
@@ -830,6 +847,13 @@ function renderCalendar() {
 }
 
 document.getElementById('prevMonth').addEventListener('click', async () => {
+  // Past months contain nothing bookable — don't let clients wander into them
+  const now = new Date();
+  if (calDate.getFullYear() < now.getFullYear() ||
+      (calDate.getFullYear() === now.getFullYear() && calDate.getMonth() <= now.getMonth())) {
+    return;
+  }
+  calDate.setDate(1);
   calDate.setMonth(calDate.getMonth() - 1);
   await checkFullyBookedDays();
   renderCalendar();
@@ -1161,6 +1185,24 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
     return;
   }
 
+  // Time keeps moving while the form is open. A slot that was fine when it
+  // was picked can be under the 1-hour lead time (or already past, if the
+  // page was left open overnight) by the time Request is pressed.
+  if (state.dateKey < formatDateKey(new Date()) ||
+      isSlotInPast(state.timeSlot, state.dateKey)) {
+    alert('Sorry — that time is now too soon to book. Please pick a later time or another day.');
+    state.timeSlot = null;
+    document.getElementById('formCard').classList.add('hidden');
+    renderCalendar();
+    if (state.dateKey >= formatDateKey(new Date())) {
+      await loadTimeSlots(state.date, state.dateKey);
+    } else {
+      document.getElementById('timeCard').classList.add('hidden');
+      state.dateKey = null;
+    }
+    return;
+  }
+
   btn.disabled = true;
   btn.textContent = 'Sending…';
 
@@ -1367,6 +1409,28 @@ async function loadMyBookings() {
   card.classList.remove('hidden');
   renderCalendar();   // paint the dots on the calendar
 }
+
+// ── BOOK ANOTHER ─────────────────────────────
+// After a successful request the calendar is hidden. Let the client start a
+// fresh booking (e.g. for a friend) without reloading. Name/email are kept —
+// it's usually the same person making the second request.
+document.getElementById('bookAnotherBtn').addEventListener('click', () => {
+  state.date = null;
+  state.dateKey = null;
+  state.timeSlot = null;
+  document.getElementById('clientNotes').value = '';
+  const btn = document.getElementById('bookBtn');
+  btn.textContent = 'Request Booking →';
+  updateBookBtn();
+
+  document.getElementById('successCard').classList.add('hidden');
+  document.getElementById('formCard').classList.add('hidden');
+  document.getElementById('timeCard').classList.add('hidden');
+  const cal = document.getElementById('calCard');
+  cal.classList.remove('hidden');
+  renderCalendar();
+  scrollTo(cal);
+});
 
 // ── OWNER EMAIL NOTIFICATION ─────────────────
 async function notifyOwner(bk, bookingId) {

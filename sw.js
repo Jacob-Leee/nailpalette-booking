@@ -4,7 +4,7 @@
    ══════════════════════════════════════════════ */
 
 // Bump this whenever index.html changes, so old copies are evicted.
-const CACHE_NAME = 'nailpalette-v6';
+const CACHE_NAME = 'nailpalette-v7';
 
 // Files to cache — use scope as base so paths work on GitHub Pages subfolders.
 // index.html now inlines its own CSS and JS, so css/style.css and js/app.js
