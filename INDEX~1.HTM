@@ -593,7 +593,7 @@ body {
 /* ══════════════════════════════════════════════
    nailpalette.syd — Single Page Booking
    ══════════════════════════════════════════════ */
-const APP_VERSION = 'v7-recheck';
+const APP_VERSION = 'v8-locks';
 console.log('[nailpalette] build', APP_VERSION);
 
 // ── FIREBASE INIT ─────────────────────────────
@@ -721,6 +721,19 @@ function isSlotBlocked(slotTime, bookings) {
     if (slotMin < bStart && slotMin + SERVICE_DURATION > bStart) return true;
     return false;
   });
+}
+
+// IDs of the 30-minute blocks an appointment occupies, used as slot locks:
+// 7:00 PM for 90 min on 28 Oct → ["2026-10-28_1900", "_1930", "_2000"].
+// Two appointments overlap exactly when they share at least one block.
+function lockIdsFor(dateKey, timeLabel, duration) {
+  const start = parseTimeToMinutes(timeLabel);
+  const end   = start + (parseInt(duration) || SERVICE_DURATION);
+  const ids = [];
+  for (let m = Math.floor(start / 30) * 30; m < end; m += 30) {
+    ids.push(`${dateKey}_${String(Math.floor(m / 60)).padStart(2, '0')}${String(m % 60).padStart(2, '0')}`);
+  }
+  return ids;
 }
 
 // "6:30 PM" → "8:00 PM" (start + one appointment)
@@ -1228,9 +1241,9 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
     return;
   }
 
-  try {
-    // Re-check availability at submit time so two people can't grab
-    // the same slot while both have the page open
+  // Reads the date's live bookings straight from the server and refreshes
+  // the cache, so any redraw afterwards reflects reality.
+  const readTaken = async () => {
     const fresh = await withTimeout(
       window._db.collection('bookings').where('date', '==', state.dateKey).get(),
       8000, 'availability re-check');
@@ -1239,23 +1252,54 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
       .filter(b => b.status === 'pending' || b.status === 'confirmed')
       .map(b => ({ id: b.id, time: b.time, status: b.status,
                    duration: parseInt(b.duration) || SERVICE_DURATION }));
-
-    // Whatever happens next, the cache must reflect what the server just said —
-    // otherwise the grid redraws from stale data and shows the taken slot as free.
     if (bookingsByDate) bookingsByDate[state.dateKey] = taken;
+    return taken;
+  };
 
-    if (isSlotBlocked(state.timeSlot, taken)) {
-      alert('Sorry — that time was just taken. Please pick another slot.');
-      btn.disabled = false;
-      btn.textContent = 'Request Booking →';
-      state.timeSlot = null;
-      document.getElementById('formCard').classList.add('hidden');
-      await loadTimeSlots(state.date, state.dateKey);   // redraw from fresh data
+  const showJustTaken = async () => {
+    alert('Sorry — that time was just taken. Please pick another slot.');
+    btn.disabled = false;
+    btn.textContent = 'Request Booking →';
+    state.timeSlot = null;
+    document.getElementById('formCard').classList.add('hidden');
+    await loadTimeSlots(state.date, state.dateKey);   // redraw from fresh data
+  };
+
+  try {
+    // Quick check first — catches the common case cheaply
+    if (isSlotBlocked(state.timeSlot, await readTaken())) {
+      await showJustTaken();
       return;
     }
 
-    const ref = await withTimeout(
-      window._db.collection('bookings').add(data), 12000, 'saving booking');
+    // Save the booking TOGETHER with a lock for every 30-minute block it
+    // covers, in one atomic batch. If someone else locked any of those blocks
+    // a moment ago, Firestore rejects the whole batch — so two people pressing
+    // Request at the same instant can no longer both get the same time.
+    const ref   = window._db.collection('bookings').doc();
+    const batch = window._db.batch();
+    batch.set(ref, data);
+    lockIdsFor(data.date, data.time, data.duration).forEach(lockId => {
+      batch.set(window._db.collection('slotLocks').doc(lockId),
+                { bookingId: ref.id, date: data.date, time: data.time });
+    });
+
+    try {
+      await withTimeout(batch.commit(), 12000, 'saving booking');
+    } catch (e) {
+      if (!e || e.code !== 'permission-denied') throw e;
+      // Denied: either a rival's lock won the race, or the lock rules aren't
+      // published yet. Look at what's actually booked to tell which.
+      if (isSlotBlocked(state.timeSlot, await readTaken())) {
+        await showJustTaken();
+        return;
+      }
+      // No rival booking exists, so the denial came from missing/old rules.
+      // Fall back to a plain save so the site never stops taking bookings.
+      console.warn('[nailpalette] slot lock rejected without a rival — saving without lock');
+      await withTimeout(ref.set(data), 12000, 'saving booking');
+    }
+
     rememberMyBooking(ref.id);          // so this device can track its status
     // Add the new booking to the cache so the slot reads as taken straight away
     if (bookingsByDate) {
