@@ -589,7 +589,7 @@ body {
 /* ══════════════════════════════════════════════
    nailpalette.syd — Single Page Booking
    ══════════════════════════════════════════════ */
-const APP_VERSION = 'v5-slotfix';
+const APP_VERSION = 'v6-instant';
 console.log('[nailpalette] build', APP_VERSION);
 
 // ── FIREBASE INIT ─────────────────────────────
@@ -670,6 +670,10 @@ let fullyBookedDates = new Set();
 // Per-date slot overrides from the admin's Manage Slots tab:
 //   { "2026-09-19": ["7:00 PM", ...] }  — an empty array means the day is closed
 let slotOverrides    = {};
+// Live bookings grouped by date, filled by the same page-load fetch that powers
+// the calendar. Tapping a date reads from here, so it renders with no network
+// round trip at all; a background refresh then confirms it.
+let bookingsByDate   = null;   // null = not loaded yet
 // Bookings made from THIS device — [{id, date, time, status}]
 let myBookings       = [];
 
@@ -865,6 +869,20 @@ function selectDate(date, dateKey, el) {
 async function loadTimeSlots(date, dateKey) {
   const content = document.getElementById('timeContent');
 
+  // Paint immediately from the data the page already loaded, so tapping a
+  // date feels instant instead of showing "Loading…" for a network round trip.
+  const cached = slotsFromCache(date, dateKey);
+  if (cached) {
+    renderSlots(cached, date, dateKey);
+    // Then quietly confirm against the server and re-render only if it differs
+    fetchAvailableSlots(date, dateKey).then(fresh => {
+      if (state.dateKey !== dateKey) return;          // user moved on
+      const same = JSON.stringify(fresh) === JSON.stringify(cached);
+      if (!same) renderSlots(fresh, date, dateKey);
+    }).catch(e => console.warn('[nailpalette] background refresh failed:', e.message));
+    return;
+  }
+
   let slots;
   try {
     slots = await fetchAvailableSlots(date, dateKey);
@@ -881,6 +899,14 @@ async function loadTimeSlots(date, dateKey) {
     });
     return;
   }
+
+  renderSlots(slots, date, dateKey);
+}
+
+// Draws the slot buttons. Shared by the instant cached path and the
+// network path so the two can never render differently.
+function renderSlots(slots, date, dateKey) {
+  const content = document.getElementById('timeContent');
 
   if (!slots || slots.length === 0) {
     content.innerHTML = '<div class="no-slots-msg">No available times for this day. Please choose another date.</div>';
@@ -936,69 +962,84 @@ async function loadTimeSlots(date, dateKey) {
   }
 }
 
-async function fetchAvailableSlots(date, dateKey) {
+// Turn a date's bookings into the slot list the UI renders.
+// Pure function — no network, so it can run against cached or fresh data.
+function buildSlots(date, dateKey, booked) {
   const dow = date.getDay();
-  let rawSlots = DEFAULT_SCHEDULE[dow] || [];
+  const rawSlots = slotOverrides[dateKey] !== undefined
+    ? slotOverrides[dateKey]
+    : (DEFAULT_SCHEDULE[dow] || []);
+  const myIds = getMyIds();
 
-  if (window._db) {
-    try {
-      // Slot overrides are optional — never let them block the whole render
-      try {
-        const overrideDoc = await withTimeout(
-          window._db.collection('settings').doc('slots_' + dateKey).get(),
-          6000, 'slot override');
-        if (overrideDoc.exists) {
-          const o = overrideDoc.data();
-          if (o && Array.isArray(o.slots)) rawSlots = o.slots;
-        }
-      } catch (e) {
-        console.warn('[nailpalette] slot override skipped:', e.message);
-      }
+  return rawSlots.map(slotTime => {
+    const own     = booked.find(b => myIds.includes(b.id) && b.time === slotTime);
+    const taken   = isSlotBlocked(slotTime, booked);
+    const tooLate = isSlotInPast(slotTime, dateKey);
+    return {
+      time:   slotTime,
+      booked: taken || tooLate,
+      // Keep the two reasons apart — a slot that is merely too soon must
+      // not be labelled "already booked".
+      reason: taken ? 'taken' : (tooLate ? 'past' : null),
+      mine:   !!own,
+      status: own ? own.status : null
+    };
+  });
+}
 
-      // Single-field query only (no composite index needed) —
-      // status is filtered client-side.
-      const snap = await withTimeout(
-        window._db.collection('bookings').where('date', '==', dateKey).get(),
-        8000, 'bookings query');
+// Slots straight from the page-load data — instant, no network.
+// Returns null when that data isn't available yet.
+function slotsFromCache(date, dateKey) {
+  if (!bookingsByDate) return null;
+  return buildSlots(date, dateKey, bookingsByDate[dateKey] || []);
+}
 
-      const myIds = getMyIds();
-      const booked = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(b => b.status === 'pending' || b.status === 'confirmed')
-        .map(b => ({
-          time:     b.time,
-          duration: parseInt(b.duration) || SERVICE_DURATION,
-          mine:     myIds.includes(b.id),
-          status:   b.status
-        }));
-
-      console.log(`[nailpalette] ${dateKey}: ${booked.length} existing booking(s)`);
-
-      return rawSlots.map(slotTime => {
-        const own    = booked.find(b => b.mine && b.time === slotTime);
-        const taken  = isSlotBlocked(slotTime, booked);
-        const tooLate = isSlotInPast(slotTime, dateKey);
-        return {
-          time:   slotTime,
-          booked: taken || tooLate,
-          // Keep the two reasons apart — a slot that is merely too soon must
-          // not be labelled "already booked".
-          reason: taken ? 'taken' : (tooLate ? 'past' : null),
-          mine:   !!own,
-          status: own ? own.status : null
-        };
-      });
-    } catch (e) {
-      console.error('[nailpalette] Firestore query failed — showing all slots as open:', e);
-    }
-  } else {
+// Slots verified against the server for one date.
+async function fetchAvailableSlots(date, dateKey) {
+  if (!window._db) {
     console.error('[nailpalette] window._db is not set — Firebase did not initialise.');
+    const dow = date.getDay();
+    const raw = slotOverrides[dateKey] !== undefined
+      ? slotOverrides[dateKey] : (DEFAULT_SCHEDULE[dow] || []);
+    return raw.map(time => {
+      const tooLate = isSlotInPast(time, dateKey);
+      return { time, booked: tooLate, reason: tooLate ? 'past' : null };
+    });
   }
 
-  return rawSlots.map(time => {
-    const tooLate = isSlotInPast(time, dateKey);
-    return { time, booked: tooLate, reason: tooLate ? 'past' : null };
-  });
+  try {
+    // Both reads in parallel — sequentially they cost roughly 3x as long.
+    const [overrideDoc, snap] = await Promise.all([
+      withTimeout(window._db.collection('settings').doc('slots_' + dateKey).get(),
+                  6000, 'slot override')
+        .catch(e => { console.warn('[nailpalette] slot override skipped:', e.message); return null; }),
+      withTimeout(window._db.collection('bookings').where('date', '==', dateKey).get(),
+                  8000, 'bookings query')
+    ]);
+
+    if (overrideDoc && overrideDoc.exists) {
+      const o = overrideDoc.data();
+      if (o && Array.isArray(o.slots)) slotOverrides[dateKey] = o.slots;
+    }
+
+    const booked = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(b => b.status === 'pending' || b.status === 'confirmed')
+      .map(b => ({
+        id:       b.id,
+        time:     b.time,
+        duration: parseInt(b.duration) || SERVICE_DURATION,
+        status:   b.status
+      }));
+
+    // Keep the cache in step so a second visit to this date stays instant
+    if (bookingsByDate) bookingsByDate[dateKey] = booked;
+
+    return buildSlots(date, dateKey, booked);
+  } catch (e) {
+    console.error('[nailpalette] Firestore query failed:', e);
+    throw e;
+  }
 }
 
 // ── TIME SELECTION ───────────────────────────
@@ -1216,16 +1257,14 @@ async function loadMyBookings() {
   const card = document.getElementById('myCard');
   if (!ids.length || !window._db) { card.classList.add('hidden'); return; }
 
-  const results = [];
-  for (const id of ids) {
-    try {
-      const doc = await withTimeout(
-        window._db.collection('bookings').doc(id).get(), 6000, 'my booking');
-      if (doc.exists) results.push({ id, ...doc.data() });
-    } catch (e) {
-      console.warn('[nailpalette] could not load booking', id, e.message);
-    }
-  }
+  // All at once rather than one after another — with several stored bookings
+  // the sequential version cost one network round trip each.
+  const settled = await Promise.all(ids.map(id =>
+    withTimeout(window._db.collection('bookings').doc(id).get(), 6000, 'my booking')
+      .then(doc => (doc.exists ? { id, ...doc.data() } : null))
+      .catch(e => { console.warn('[nailpalette] could not load booking', id, e.message); return null; })
+  ));
+  const results = settled.filter(Boolean);
 
   // Forget anything already in the past so this list stays short and we stop
   // re-reading old bookings from Firestore on every visit.
@@ -1350,12 +1389,18 @@ async function checkFullyBookedDays() {
   const lastDay  = `${year}-${String(month+1).padStart(2,'0')}-${String(new Date(year, month+1, 0).getDate()).padStart(2,'0')}`;
 
   try {
-    // Load per-date slot overrides saved from the admin's "Manage Slots" tab.
+    // Both reads go out at once instead of one after the other — on mobile
+    // each round trip costs real time, and these don't depend on each other.
+    const [setSnap, snap] = await Promise.all([
+      withTimeout(window._db.collection('settings').get(), 6000, 'slot overrides')
+        .catch(e => { console.warn('[nailpalette] slot overrides skipped:', e.message); return null; }),
+      withTimeout(window._db.collection('bookings').get(), 8000, 'bookings')
+    ]);
+
+    // Per-date slot overrides saved from the admin's "Manage Slots" tab.
     // Without these, a day whose slots were all removed still looked open.
-    slotOverrides = {};
-    try {
-      const setSnap = await withTimeout(
-        window._db.collection('settings').get(), 6000, 'slot overrides');
+    if (setSnap) {
+      slotOverrides = {};
       setSnap.docs.forEach(d => {
         if (!d.id.startsWith('slots_')) return;
         const data = d.data();
@@ -1363,22 +1408,28 @@ async function checkFullyBookedDays() {
           slotOverrides[d.id.slice(6)] = data.slots;   // "slots_2026-09-19" → "2026-09-19"
         }
       });
-    } catch (e) {
-      console.warn('[nailpalette] slot overrides skipped:', e.message);
     }
 
-    // Fetch all bookings; filter status + date range client-side (no index needed)
-    const snap = await withTimeout(
-      window._db.collection('bookings').get(), 8000, 'month bookings');
-
-    const byDate = {};
+    // Keep EVERY live booking grouped by date. Tapping a date then needs no
+    // network call at all — the data is already here.
+    const allByDate = {};
     snap.docs.forEach(d => {
       const bk = d.data();
       if (bk.status !== 'pending' && bk.status !== 'confirmed') return;
-      if (bk.date >= firstDay && bk.date <= lastDay) {
-        if (!byDate[bk.date]) byDate[bk.date] = [];
-        byDate[bk.date].push({ time: bk.time, duration: parseInt(bk.duration) || SERVICE_DURATION });
-      }
+      if (!allByDate[bk.date]) allByDate[bk.date] = [];
+      allByDate[bk.date].push({
+        id:       d.id,
+        time:     bk.time,
+        duration: parseInt(bk.duration) || SERVICE_DURATION,
+        status:   bk.status
+      });
+    });
+    bookingsByDate = allByDate;
+
+    // This month's slice drives the calendar's fully-booked shading
+    const byDate = {};
+    Object.entries(allByDate).forEach(([dk, bks]) => {
+      if (dk >= firstDay && dk <= lastDay) byDate[dk] = bks;
     });
 
     fullyBookedDates = new Set();
