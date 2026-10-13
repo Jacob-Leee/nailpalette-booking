@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#F5F4EF">
 <title>nailpalette.syd — Book Now</title>
 <link rel="manifest" href="manifest.json">
@@ -459,6 +459,16 @@ body {
 }
 .site-footer a { color: var(--light); text-decoration: none; }
 
+/* ── PHONES ──
+   iOS Safari zooms the page whenever a field under 16px is focused.
+   Keeping inputs at 16px stops that without blocking pinch-zoom,
+   and slightly larger tap targets are easier to hit with a thumb. */
+@media (max-width: 600px) {
+  input, select, textarea, .field-input { font-size: 16px !important; }
+  .time-btn { padding: 11px 16px; }
+  .cal-nav  { width: 40px; height: 40px; }
+}
+
 /* ── HIDDEN ── */
 .hidden { display: none !important; }
 </style>
@@ -593,7 +603,7 @@ body {
 /* ══════════════════════════════════════════════
    nailpalette.syd — Single Page Booking
    ══════════════════════════════════════════════ */
-const APP_VERSION = 'v8-locks';
+const APP_VERSION = 'v9-mobile';
 console.log('[nailpalette] build', APP_VERSION);
 
 // ── FIREBASE INIT ─────────────────────────────

@@ -165,6 +165,11 @@ body {
 
 .success-color { color: var(--sage); }
 .error-color   { color: #a06060; }
+
+/* iOS Safari zooms in on any focused field under 16px */
+@media (max-width: 600px) {
+  input { font-size: 16px !important; }
+}
 </style>
 </head>
 <body>
