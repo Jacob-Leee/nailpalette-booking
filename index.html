@@ -616,7 +616,7 @@ body {
 /* ══════════════════════════════════════════════
    nailpalette.syd — Single Page Booking
    ══════════════════════════════════════════════ */
-const APP_VERSION = 'v13';
+const APP_VERSION = 'v15-slotcal';
 console.log('[nailpalette] build', APP_VERSION);
 
 // ── FIREBASE INIT ─────────────────────────────
@@ -698,6 +698,16 @@ let fullyBookedDates = new Set();
 // Per-date slot overrides from the admin's Manage Slots tab:
 //   { "2026-09-19": ["7:00 PM", ...] }  — an empty array means the day is closed
 let slotOverrides    = {};
+// Times the owner has marked "show as booked" — still listed, but greyed out
+// exactly like someone else's booking:  { "2026-10-30": ["7:00 PM"] }
+let heldSlots        = {};
+function setHeldFromDoc(dateKey, data) {
+  if (data && Array.isArray(data.held) && data.held.length) heldSlots[dateKey] = data.held;
+  else delete heldSlots[dateKey];
+}
+function isHeld(dateKey, slotTime) {
+  return !!(heldSlots[dateKey] && heldSlots[dateKey].includes(slotTime));
+}
 // Live bookings grouped by date, filled by the same page-load fetch that powers
 // the calendar. Tapping a date reads from here, so it renders with no network
 // round trip at all; a background refresh then confirms it.
@@ -1027,10 +1037,10 @@ function renderSlots(slots, date, dateKey) {
       btn.textContent = `${slot.time} · ${slot.status === 'confirmed' ? 'Yours ✓' : 'Yours (pending)'}`;
       btn.title = 'Your booking';
     } else if (slot.reason === 'closing') {
-      // Free, but a 3-hour visit starting here would run past closing time
+      // The salon is closed this day (vacation)
       btn.classList.add('too-soon');
-      btn.textContent = `${slot.time} · ends too late`;
-      btn.title = `A ${durationText()} visit starting here would finish after closing`;
+      btn.textContent = `${slot.time} · closed`;
+      btn.title = 'Closed on this day';
     } else if (slot.reason === 'past') {
       // Today only — too soon to book, NOT taken by anyone
       btn.classList.add('too-soon');
@@ -1104,7 +1114,8 @@ function buildSlots(date, dateKey, booked, duration = chosenDuration()) {
 
   return rawSlots.map(slotTime => {
     const own     = booked.find(b => myIds.includes(b.id) && b.time === slotTime);
-    const taken   = isSlotBlocked(slotTime, booked, duration);
+    // A time the owner marked "show as booked" behaves like someone else's booking
+    const taken   = isHeld(dateKey, slotTime) || isSlotBlocked(slotTime, booked, duration);
     const tooLate = isSlotInPast(slotTime, dateKey);
     // Any advertised start time is fine for either length — a 3-hour visit
     // may start at the last slot (8:00 PM) and run past 9:30. Only a vacation
@@ -1155,6 +1166,7 @@ async function fetchAvailableSlots(date, dateKey) {
     if (overrideDoc && overrideDoc.exists) {
       const o = overrideDoc.data();
       if (o && Array.isArray(o.slots)) slotOverrides[dateKey] = o.slots;
+      setHeldFromDoc(dateKey, o);
     }
 
     const booked = snap.docs
@@ -1361,6 +1373,7 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
     if (ovDoc) {
       if (ovDoc.exists && Array.isArray(ovDoc.data().slots)) slotOverrides[state.dateKey] = ovDoc.data().slots;
       else delete slotOverrides[state.dateKey];
+      setHeldFromDoc(state.dateKey, ovDoc.exists ? ovDoc.data() : null);
     }
     const stillOffered = buildSlots(state.date, state.dateKey, [], data.duration)
       .find(sl => sl.time === state.timeSlot);
@@ -1683,6 +1696,7 @@ async function checkFullyBookedDays() {
     // Without these, a day whose slots were all removed still looked open.
     if (setSnap) {
       slotOverrides = {};
+      heldSlots = {};
       setSnap.docs.forEach(d => {
         if (d.id === 'blocked_dates') {
           blockedDates = new Set((d.data() && d.data().dates) || []);
@@ -1693,6 +1707,7 @@ async function checkFullyBookedDays() {
         if (data && Array.isArray(data.slots)) {
           slotOverrides[d.id.slice(6)] = data.slots;   // "slots_2026-09-19" → "2026-09-19"
         }
+        setHeldFromDoc(d.id.slice(6), data);
       });
     }
 
@@ -1723,7 +1738,8 @@ async function checkFullyBookedDays() {
     // 1) Any date whose override leaves no slots at all is closed outright,
     //    even if nobody has booked it.
     Object.entries(slotOverrides).forEach(([dk, slots]) => {
-      if (dk >= firstDay && dk <= lastDay && slots.length === 0) {
+      if (dk >= firstDay && dk <= lastDay &&
+          (slots.length === 0 || slots.every(t => isHeld(dk, t)))) {
         fullyBookedDates.add(dk);
       }
     });
@@ -1737,7 +1753,7 @@ async function checkFullyBookedDays() {
         : (DEFAULT_SCHEDULE[dow] || []);
       if (!slots.length) { fullyBookedDates.add(dk); return; }
       // Uses the exact same rule as the time-slot list
-      const allBlocked = slots.every(slotTime => isSlotBlocked(slotTime, bks));
+      const allBlocked = slots.every(slotTime => isHeld(dk, slotTime) || isSlotBlocked(slotTime, bks));
       if (allBlocked) fullyBookedDates.add(dk);
     });
   } catch (e) {
