@@ -616,7 +616,7 @@ body {
 /* ══════════════════════════════════════════════
    nailpalette.syd — Single Page Booking
    ══════════════════════════════════════════════ */
-const APP_VERSION = 'v11-audit';
+const APP_VERSION = 'v12-late-combo';
 console.log('[nailpalette] build', APP_VERSION);
 
 // ── FIREBASE INIT ─────────────────────────────
@@ -1094,7 +1094,6 @@ function renderSlots(slots, date, dateKey) {
 // Pure function — no network, so it can run against cached or fresh data.
 function buildSlots(date, dateKey, booked, duration = chosenDuration()) {
   const dow = date.getDay();
-  const closeAt = closingMinutes(dateKey, dow);
   // A vacation day can still be opened when the client has their own booking
   // on it (to see its status) — but nothing on it may be booked.
   const dayClosed = blockedDates.has(dateKey);
@@ -1107,7 +1106,10 @@ function buildSlots(date, dateKey, booked, duration = chosenDuration()) {
     const own     = booked.find(b => myIds.includes(b.id) && b.time === slotTime);
     const taken   = isSlotBlocked(slotTime, booked, duration);
     const tooLate = isSlotInPast(slotTime, dateKey);
-    const overRun = dayClosed || parseTimeToMinutes(slotTime) + duration > closeAt;
+    // Any advertised start time is fine for either length — a 3-hour visit
+    // may start at the last slot (8:00 PM) and run past 9:30. Only a vacation
+    // day closes everything.
+    const overRun = dayClosed;
     return {
       time:   slotTime,
       booked: taken || tooLate || overRun,
