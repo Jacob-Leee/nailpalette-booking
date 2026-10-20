@@ -274,6 +274,16 @@ function show(stateId) {
 }
 
 // Client-supplied text goes into innerHTML below — escape it
+// "1:00 PM – 4:00 PM" using the booking's own length (90 min, or 180 for mani + pedi)
+function timeRange(bk) {
+  const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec((bk && bk.time || '').trim());
+  if (!m) return (bk && bk.time) || '—';
+  let h = parseInt(m[1]) % 12; if (m[3].toUpperCase() === 'PM') h += 12;
+  const end = h * 60 + parseInt(m[2]) + (parseInt(bk.duration) || 90);
+  const eh = Math.floor(end / 60) % 24, em = end % 60;
+  return `${bk.time} – ${eh % 12 || 12}:${String(em).padStart(2, '0')} ${eh >= 12 ? 'PM' : 'AM'}`;
+}
+
 function esc(s) {
   if (s === null || s === undefined) return '';
   return String(s)
@@ -286,7 +296,7 @@ function detailHTML(bk) {
     <div class="detail-row"><span class="detail-label">Client</span><span class="detail-val">${esc(bk.name) || '—'}</span></div>
     <div class="detail-row"><span class="detail-label">Service</span><span class="detail-val">${esc(bk.service) || '—'}</span></div>
     <div class="detail-row"><span class="detail-label">Date</span><span class="detail-val">${esc(formatDate(bk.date))}</span></div>
-    <div class="detail-row"><span class="detail-label">Time</span><span class="detail-val">${esc(bk.time) || '—'}</span></div>
+    <div class="detail-row"><span class="detail-label">Time</span><span class="detail-val">${esc(timeRange(bk))}</span></div>
     <div class="detail-row"><span class="detail-label">${esc(bk.contactMethod === 'instagram' ? 'Instagram' : 'Phone')}</span><span class="detail-val">${esc(bk.contactHandle) || '—'}</span></div>
     ${bk.addons?.length ? `<div class="detail-row"><span class="detail-label">Add-ons</span><span class="detail-val">${esc(bk.addons.join(', '))}</span></div>` : ''}
     ${bk.notes ? `<div class="detail-row"><span class="detail-label">Notes</span><span class="detail-val">${esc(bk.notes)}</span></div>` : ''}
@@ -416,7 +426,7 @@ document.getElementById('doConfirmBtn').addEventListener('click', async () => {
         client_name: currentBooking.name,
         service:     currentBooking.service,
         date:        formatDate(currentBooking.date),
-        time:        currentBooking.time,
+        time:        timeRange(currentBooking),
         contact:     (currentBooking.contactMethod || 'Phone') + ': ' + currentBooking.contactHandle,
         addons:      (currentBooking.addons || []).join(', ') || 'None'
       }).catch(e => console.warn('Client email failed:', e));
@@ -478,7 +488,7 @@ async function sendClientDecline(bk) {
       client_name:  bk.name || 'there',
       service:      bk.service || 'your appointment',
       date:         formatDate(bk.date),
-      time:         bk.time,
+      time:         timeRange(bk),
       booking_link: base + 'index.html'
     });
     return true;

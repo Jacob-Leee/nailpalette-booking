@@ -1055,6 +1055,14 @@ body {
       </select>
     </div>
     <div class="modal-field">
+      <label class="modal-label">Length</label>
+      <select class="modal-select" id="mDuration">
+        <option value="90">1.5 hours — manicure or pedicure</option>
+        <option value="180">3 hours — manicure + pedicure</option>
+        <option value="120">2 hours (older bookings)</option>
+      </select>
+    </div>
+    <div class="modal-field">
       <label class="modal-label">Date *</label>
       <input class="modal-input" id="mDate" type="date" style="color-scheme:light">
       <div id="mDateWarning" style="display:none;font-size:11px;color:#B06A6A;margin-top:6px;line-height:1.5"></div>
@@ -1226,7 +1234,7 @@ function renderBookings(docs) {
       <div>
         <div class="bk-service">${esc(bk.service) || '—'}</div>
         <div class="bk-datetime">
-          ${esc(formatDisplayDate(bk.date))} · ${esc(bk.time) || '—'}
+          ${esc(formatDisplayDate(bk.date))} · ${esc(timeRange(bk))}${bookingDuration(bk) >= COMBO_DURATION ? ' · 3h' : ''}
         </div>
         <div class="bk-client">
           <strong>${esc(bk.name) || '—'}</strong><br>
@@ -1247,9 +1255,24 @@ function renderBookings(docs) {
 async function updateBookingStatus(id, status) {
   if (!db) { showToast('Firebase not configured'); return; }
 
-  // Confirm before actioning
+  // Confirm before actioning — and say so if confirming would double-book
   const label = status === 'confirmed' ? 'confirm' : 'cancel';
-  if (!confirm(`Are you sure you want to ${label} this booking?`)) return;
+  let question = `Are you sure you want to ${label} this booking?`;
+  if (status === 'confirmed') {
+    try {
+      const cur = await db.collection('bookings').doc(id).get();
+      if (cur.exists) {
+        const bk = { id, ...cur.data() };
+        const day = await db.collection('bookings').where('date', '==', bk.date).get();
+        const clashes = overlapsFor(bk, day.docs.map(d => ({ id: d.id, ...d.data() })));
+        if (clashes.length) {
+          question = `⚠ This overlaps ${clashes.map(c => `${c.name || 'another client'} (${timeRange(c)})`).join(', ')}.\n\n` +
+                     `Confirm anyway?`;
+        }
+      }
+    } catch (e) { /* if the check fails, fall back to the plain question */ }
+  }
+  if (!confirm(question)) return;
 
   try {
     await db.collection('bookings').doc(id).update({ status });
@@ -1271,8 +1294,26 @@ async function updateBookingStatus(id, status) {
                         : 'Booking cancelled — please message the client');
     }
     loadBookings();
+    await refreshCalendarKeepingPanel();
   } catch (e) {
     showToast('Error updating booking');
+  }
+}
+
+// Re-reads the calendar and, if a day panel was open, re-opens it with fresh
+// data. Previously confirming/cancelling from the day panel left the panel and
+// the calendar chips showing the old status until the page was reloaded.
+async function refreshCalendarKeepingPanel(focusDate) {
+  if (!calInitialized && !focusDate) return;          // calendar never opened
+  const panelOpen = document.getElementById('calDayPanel').style.display === 'block';
+  const sel = document.querySelector('.admin-cal-day.selected-day');
+  const openDate = focusDate || (panelOpen && sel ? sel.dataset.dateKey : null);
+  calInitialized = true;
+  await fetchCalBookings();
+  renderAdminCalendar();
+  if (openDate) {
+    showCalDay(openDate, adminCalBookings[openDate] || [],
+               document.querySelector(`[data-date-key="${openDate}"]`));
   }
 }
 
@@ -1300,7 +1341,7 @@ async function sendClientConfirmation(bk) {
       client_name: bk.name,
       service:     bk.service || 'Nail appointment',
       date:        formatDisplayDate(bk.date),
-      time:        bk.time,
+      time:        timeRange(bk),
       contact:     `${bk.contactMethod || 'phone'}: ${bk.contactHandle || '—'}`,
       addons:      bk.addons?.join(', ') || 'None'
     });
@@ -1338,7 +1379,7 @@ async function sendClientDecline(bk) {
       client_name:  bk.name || 'there',
       service:      bk.service || 'your appointment',
       date:         formatDisplayDate(bk.date),
-      time:         bk.time,
+      time:         timeRange(bk),
       booking_link: base + 'index.html'
     });
     return true;
@@ -1364,6 +1405,33 @@ function updateStats(docs) {
 // Must also fit inside the daily window below, or later start times become
 // unusable (a 120-min service in a 6:30–8:00 PM window blocked the whole day).
 const SERVICE_DURATION = 90;
+// Manicure + pedicure in one visit (or two people, hands then feet) — must
+// match COMBO_DURATION in index.html.
+const COMBO_DURATION = 180;
+
+// "1:00 PM – 4:00 PM" for a booking, using its own length
+function bookingDuration(bk) {
+  return parseInt(bk && bk.duration) || SERVICE_DURATION;
+}
+function timeRange(bk) {
+  if (!bk || !bk.time) return '—';
+  return `${bk.time} – ${minutesToLabel(parseTimeToMinutes(bk.time) + bookingDuration(bk))}`;
+}
+// Other live bookings on the same day that overlap this one
+function overlapsFor(bk, sameDay) {
+  const s = parseTimeToMinutes(bk.time), e = s + bookingDuration(bk);
+  return (sameDay || []).filter(o => o.id !== bk.id &&
+    (o.status === 'pending' || o.status === 'confirmed') &&
+    parseTimeToMinutes(o.time) < e && s < parseTimeToMinutes(o.time) + bookingDuration(o));
+}
+
+function modalDuration() {
+  return parseInt(document.getElementById('mDuration').value) || SERVICE_DURATION;
+}
+// A combined service implies the long slot
+function isComboService(v) {
+  return /\+|pedi.*mani|mani.*pedi/i.test(v || '');
+}
 
 const SCHEDULE_WINDOWS = {
   0: [15,   20],    // Sunday    3:00 PM – 8:00 PM
@@ -1515,6 +1583,21 @@ document.getElementById('blockVacBtn').addEventListener('click', async () => {
     cur.setDate(cur.getDate() + 1);
   }
 
+  // Blocking days that already have bookings doesn't cancel them — make sure
+  // the owner knows who will need a message.
+  try {
+    const snap = await db.collection('bookings').get();
+    const affected = snap.docs.map(d => d.data())
+      .filter(b => (b.status === 'pending' || b.status === 'confirmed') && dates.includes(b.date))
+      .sort((a, b) => a.date === b.date ? parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time) : (a.date < b.date ? -1 : 1));
+    if (affected.length) {
+      const list = affected.map(b => `· ${formatDisplayDate(b.date)} ${timeRange(b)} — ${b.name || 'client'}`).join('\n');
+      if (!confirm(`These bookings fall inside the dates you're blocking:\n\n${list}\n\n` +
+                   `They will NOT be cancelled automatically — you'll need to cancel or move them ` +
+                   `and let the clients know.\n\nBlock the dates anyway?`)) return;
+    }
+  } catch (e) { /* if the check fails, carry on — blocking is still safe */ }
+
   try {
     const doc = await db.collection('settings').doc('blocked_dates').get();
     const existing = doc.exists ? (doc.data().dates || []) : [];
@@ -1616,7 +1699,7 @@ async function populateAdminTimeSelect(dateKey, excludeBookingId = null) {
   // One definition of "conflict", shared with the save check and drag-drop:
   // a genuine overlap of two appointment intervals. Previously this used an
   // extra 90-min buffer, so it flagged far more times than actually clashed.
-  const NEW_DURATION = SERVICE_DURATION;
+  const NEW_DURATION = modalDuration();
 
   generate30MinSlots(9, 22).forEach(slotTime => {
     const slotMin = parseTimeToMinutes(slotTime);
@@ -1636,8 +1719,15 @@ async function populateAdminTimeSelect(dateKey, excludeBookingId = null) {
     select.appendChild(opt);
   });
 
-  // Restore previous selection if still valid
-  if (prevVal) select.value = prevVal;
+  // Restore previous selection — even if it isn't on the 30-minute grid
+  if (prevVal) {
+    if (![...select.options].some(o => o.value === prevVal)) {
+      const o = document.createElement('option');
+      o.value = prevVal; o.textContent = prevVal + ' (current)';
+      select.appendChild(o);
+    }
+    select.value = prevVal;
+  }
 }
 
 async function openAddModal(dateKey) {
@@ -1648,6 +1738,7 @@ async function openAddModal(dateKey) {
   document.getElementById('mName').value = '';
   document.getElementById('mPhone').value = '';
   document.getElementById('mService').value = '';
+  document.getElementById('mDuration').value = String(SERVICE_DURATION);
   document.getElementById('mDate').value = dateKey || '';
   document.getElementById('mStatus').value = 'confirmed';
   document.getElementById('mEmail').value = '';
@@ -1673,13 +1764,30 @@ async function openEditModal(bk) {
   document.getElementById('mName').value = bk.name || '';
   document.getElementById('mPhone').value = bk.contactHandle || '';
   document.getElementById('mService').value = bk.service || '';
+  {
+    const d = parseInt(bk.duration) || (isComboService(bk.service) ? COMBO_DURATION : SERVICE_DURATION);
+    const sel = document.getElementById('mDuration');
+    if (![...sel.options].some(o => o.value === String(d))) {
+      const o = document.createElement('option'); o.value = String(d);
+      o.textContent = `${d / 60} hours`; sel.appendChild(o);
+    }
+    sel.value = String(d);
+  }
   document.getElementById('mDate').value = bk.date || '';
   document.getElementById('mStatus').value = bk.status || 'confirmed';
   document.getElementById('mEmail').value = bk.email || '';
   document.getElementById('mNotes').value = bk.notes || '';
   document.getElementById('modalDeleteBtn').style.display = 'inline-block';
   await populateAdminTimeSelect(bk.date, bk.id);
-  document.getElementById('mTime').value = bk.time || '';
+  {
+    const sel = document.getElementById('mTime');
+    if (bk.time && ![...sel.options].some(o => o.value === bk.time)) {
+      const o = document.createElement('option');
+      o.value = bk.time; o.textContent = bk.time + ' (current)';
+      sel.appendChild(o);
+    }
+    sel.value = bk.time || '';
+  }
   document.getElementById('bookingModal').classList.add('open');
 }
 
@@ -1689,6 +1797,16 @@ function closeModal() {
 }
 
 // Refresh available times when admin changes the date in the modal
+document.getElementById('mService').addEventListener('change', async function() {
+  const sel = document.getElementById('mDuration');
+  if (isComboService(this.value)) sel.value = String(COMBO_DURATION);
+  else if (sel.value === String(COMBO_DURATION)) sel.value = String(SERVICE_DURATION);
+  await populateAdminTimeSelect(document.getElementById('mDate').value, modalEditId);
+});
+document.getElementById('mDuration').addEventListener('change', async function() {
+  await populateAdminTimeSelect(document.getElementById('mDate').value, modalEditId);
+});
+
 document.getElementById('mDate').addEventListener('change', async function() {
   await populateAdminTimeSelect(this.value, modalEditId);
 });
@@ -1718,7 +1836,7 @@ document.getElementById('modalSaveBtn').addEventListener('click', async () => {
   {
     const warn = [];
     const newStart = parseTimeToMinutes(time);
-    const newEnd   = newStart + (modalOriginal.duration || SERVICE_DURATION);
+    const newEnd   = newStart + modalDuration();
     const clash = (adminCalBookings[date] || []).some(b => {
       if (b.id === modalEditId) return false;
       if (b.status !== 'pending' && b.status !== 'confirmed') return false;
@@ -1741,7 +1859,7 @@ document.getElementById('modalSaveBtn').addEventListener('click', async () => {
   const data = {
     name, service, date, time, status, notes, email,
     contactHandle: phone,
-    duration: modalOriginal.duration || SERVICE_DURATION  // used by slot-blocking logic
+    duration: modalDuration()  // used by slot-blocking logic
   };
 
   if (modalEditId) {
@@ -1757,32 +1875,44 @@ document.getElementById('modalSaveBtn').addEventListener('click', async () => {
 
   if (!db) { showToast('Firebase not configured'); return; }
 
+  // A fast double-tap on a phone used to save the same booking twice
+  const saveBtn = document.getElementById('modalSaveBtn');
+  if (saveBtn.disabled) return;
+  saveBtn.disabled = true;
+  const wasEdit = !!modalEditId;
+  const prevStatus = modalOriginal.status;
+
   try {
     if (modalEditId) {
       await db.collection('bookings').doc(modalEditId).update(data);
-      showToast('✓ Booking updated');
     } else {
       await db.collection('bookings').add(data);
-      showToast('✓ Booking added');
     }
+
+    // Changing the status here must notify the client exactly like the
+    // Confirm / Cancel buttons do — previously it silently didn't.
+    let note = wasEdit ? '✓ Booking updated' : '✓ Booking added';
+    if (wasEdit && status !== prevStatus) {
+      const full = { ...modalOriginal, ...data };
+      if (status === 'confirmed') {
+        note = (await sendClientConfirmation(full)) ? '✓ Confirmed & email sent' : '✓ Confirmed';
+      } else if (status === 'cancelled') {
+        note = (await sendClientDecline(full)) ? 'Booking cancelled & client notified'
+                                               : 'Booking cancelled — please message the client';
+      }
+    }
+    showToast(note);
     closeModal();
-    calInitialized = false;
-    await fetchCalBookings();
-    renderAdminCalendar();
-    // Re-open the day panel for that date
-    const bks = adminCalBookings[date] || [];
-    // find the day element and trigger showCalDay
-    setTimeout(() => {
-      const grid = document.getElementById('adminCalGrid');
-      const dayNum = parseInt(date.split('-')[2]);
-      const firstDay = new Date(adminCalDate.getFullYear(), adminCalDate.getMonth(), 1).getDay();
-      const idx = firstDay + dayNum - 1;
-      const el = grid.children[idx];
-      if (el) showCalDay(date, adminCalBookings[date] || [], el);
-    }, 100);
+
+    // Jump the calendar to the booking's month and re-open that day
+    const [yy, mm] = date.split('-').map(Number);
+    adminCalDate = new Date(yy, mm - 1, 1);
+    await refreshCalendarKeepingPanel(date);
     loadBookings();
   } catch (e) {
     showToast('Error saving booking: ' + e.message);
+  } finally {
+    saveBtn.disabled = false;
   }
 });
 
@@ -1943,7 +2073,7 @@ function renderAdminCalendar() {
         // Full time + name on desktop; compact time only on narrow screens
         const fullEl = document.createElement('span');
         fullEl.className = 'acd-time-full';
-        fullEl.textContent = bk.time + ' ' + (bk.name || '');
+        fullEl.textContent = bk.time + ' ' + (bk.name || '') + (bookingDuration(bk) >= COMBO_DURATION ? ' (3h)' : '');
 
         const shortEl = document.createElement('span');
         shortEl.className = 'acd-time-short';
@@ -1951,7 +2081,7 @@ function renderAdminCalendar() {
 
         dot.appendChild(fullEl);
         dot.appendChild(shortEl);
-        dot.title = bk.time + ' ' + (bk.name || '');
+        dot.title = timeRange(bk) + ' ' + (bk.name || '');
         if (bk.id) {
           dot.draggable = true;
           dot.addEventListener('dragstart', e => { e.stopPropagation(); startDrag(e, bk.id, bk); });
@@ -2044,7 +2174,7 @@ function showCalDay(dateKey, bks, el) {
       <div class="booking-card status-${esc(bk.status || 'pending')}" id="bk-cal-${esc(bk.id || '')}">
         <div>
           <div class="bk-service">${esc(bk.service) || '—'}</div>
-          <div class="bk-datetime">${esc(bk.time) || '—'}</div>
+          <div class="bk-datetime">${esc(timeRange(bk))}${bookingDuration(bk) >= COMBO_DURATION ? ' · 3h' : ''}</div>
           <div class="bk-client">
             <strong>${esc(bk.name) || '—'}</strong><br>
             ${esc(bk.contactMethod === 'instagram' ? 'Instagram' : 'Phone')}: ${esc(bk.contactHandle) || '—'}
@@ -2129,11 +2259,13 @@ function formatDisplayDate(dateKey) {
   return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+let toastTimer = null;
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3000);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
 }
 </script>
 </body>

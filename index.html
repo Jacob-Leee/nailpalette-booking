@@ -318,6 +318,11 @@ body {
   gap: 8px;
   margin-bottom: 10px;
 }
+.service-toggle .contact-pill { line-height: 1.35; padding: 10px 8px; }
+.service-toggle .contact-pill small {
+  display: block; font-size: 10px; font-weight: 500; opacity: 0.8; margin-top: 2px;
+}
+.service-toggle .contact-pill em { font-style: italic; font-weight: 500; }
 .contact-pill {
   flex: 1;
   padding: 9px;
@@ -515,6 +520,14 @@ body {
   <div class="section-card hidden" id="timeCard">
     <div class="section-label">Available Times</div>
     <div class="date-heading" id="dateHeading"></div>
+    <div class="contact-toggle service-toggle" role="radiogroup" aria-label="Service length">
+      <button type="button" class="contact-pill active" id="svcSingle" role="radio" aria-checked="true">
+        Manicure <em>or</em> pedicure<small>about 1.5 hours</small>
+      </button>
+      <button type="button" class="contact-pill" id="svcCombo" role="radio" aria-checked="false">
+        Manicure + pedicure<small>about 3 hours</small>
+      </button>
+    </div>
     <p class="duration-note" id="durationNote"></p>
     <div id="timeContent">
       <div class="loading-msg">Loading…</div>
@@ -603,7 +616,7 @@ body {
 /* ══════════════════════════════════════════════
    nailpalette.syd — Single Page Booking
    ══════════════════════════════════════════════ */
-const APP_VERSION = 'v9-mobile';
+const APP_VERSION = 'v11-audit';
 console.log('[nailpalette] build', APP_VERSION);
 
 // ── FIREBASE INIT ─────────────────────────────
@@ -676,6 +689,7 @@ let state = {
   date:          null,   // JS Date
   dateKey:       null,   // "YYYY-MM-DD"
   timeSlot:      null,   // "10:00 AM"
+  serviceType:   'single', // 'single' (1.5h) or 'combo' (mani + pedi, 3h)
   contactMethod: 'instagram'
 };
 
@@ -692,6 +706,24 @@ let bookingsByDate   = null;   // null = not loaded yet
 let myBookings       = [];
 
 // ── HELPERS ──────────────────────────────────
+// "Now" as the salon sees it. Slot times are Sydney times, so "today" and the
+// 1-hour lead time must be measured on Sydney's clock — not the visitor's.
+// (Someone booking from Korea or Perth used to get the wrong cut-offs.)
+const SALON_TZ = 'Australia/Sydney';
+function salonNow() {
+  try {
+    const parts = {};
+    new Intl.DateTimeFormat('en-AU', {
+      timeZone: SALON_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+    }).formatToParts(new Date()).forEach(x => { parts[x.type] = x.value; });
+    const hour = (+parts.hour) % 24;
+    return new Date(+parts.year, +parts.month - 1, +parts.day, hour, +parts.minute);
+  } catch (e) {
+    return new Date();   // very old browser — fall back to the device clock
+  }
+}
+
 function parseTimeToMinutes(t) {
   if (!t) return 0;
   const [time, period] = t.trim().split(' ');
@@ -709,18 +741,26 @@ function parseTimeToMinutes(t) {
 // still leaves the 8:00 PM slot bookable after a 6:30 PM booking.
 const SERVICE_DURATION = 90;
 
+// Manicure + pedicure in one visit takes twice as long. This also covers two
+// people coming together, one for hands and one for feet, done back to back.
+const COMBO_DURATION = 180;
+const SERVICE_OPTIONS = {
+  single: { service: '',            duration: SERVICE_DURATION },
+  combo:  { service: 'Mani + Pedi', duration: COMBO_DURATION   }
+};
+
 // Single source of truth for "is this slot unavailable?".
 // Used by BOTH the time-slot list and the fully-booked calendar check,
 // so the two can never disagree.
 // True if this slot has already passed (only relevant for today)
 function isSlotInPast(slotTime, dateKey) {
-  const now = new Date();
+  const now = salonNow();
   if (dateKey !== formatDateKey(now)) return false;
   const LEAD_MINUTES = 60;   // need at least an hour's notice
   return parseTimeToMinutes(slotTime) <= now.getHours() * 60 + now.getMinutes() + LEAD_MINUTES;
 }
 
-function isSlotBlocked(slotTime, bookings) {
+function isSlotBlocked(slotTime, bookings, newDuration = SERVICE_DURATION) {
   const slotMin = parseTimeToMinutes(slotTime);
   return bookings.some(b => {
     const bStart = parseTimeToMinutes(b.time);
@@ -728,7 +768,7 @@ function isSlotBlocked(slotTime, bookings) {
     // 1) Slot starts inside an existing booking
     if (slotMin >= bStart && slotMin < bEnd) return true;
     // 2) A new booking here would run into an existing booking
-    if (slotMin < bStart && slotMin + SERVICE_DURATION > bStart) return true;
+    if (slotMin < bStart && slotMin + newDuration > bStart) return true;
     return false;
   });
 }
@@ -747,14 +787,28 @@ function lockIdsFor(dateKey, timeLabel, duration) {
 }
 
 // "6:30 PM" → "8:00 PM" (start + one appointment)
-function slotEndLabel(slotTime) {
-  return minutesToLabel(parseTimeToMinutes(slotTime) + SERVICE_DURATION);
+function chosenDuration() {
+  return (SERVICE_OPTIONS[state.serviceType] || SERVICE_OPTIONS.single).duration;
+}
+
+function slotEndLabel(slotTime, duration = chosenDuration()) {
+  return minutesToLabel(parseTimeToMinutes(slotTime) + (parseInt(duration) || SERVICE_DURATION));
+}
+
+// Latest time an appointment may FINISH on a date: the last advertised start
+// plus one standard appointment. A 3-hour visit must end by then too, so it
+// can't start in the last hour and a half.
+function closingMinutes(dateKey, dow) {
+  const list = slotOverrides[dateKey] !== undefined
+    ? slotOverrides[dateKey] : (DEFAULT_SCHEDULE[dow] || []);
+  if (!list.length) return 0;
+  return Math.max(...list.map(parseTimeToMinutes)) + SERVICE_DURATION;
 }
 
 // Reads naturally at any value: "45 minutes", "1 hour", "1.5 hours"
-function durationText() {
-  if (SERVICE_DURATION < 60) return `${SERVICE_DURATION} minutes`;
-  const h = SERVICE_DURATION / 60;
+function durationText(mins = chosenDuration()) {
+  if (mins < 60) return `${mins} minutes`;
+  const h = mins / 60;
   if (Number.isInteger(h)) return h === 1 ? '1 hour' : `${h} hours`;
   return `${h} hours`;
 }
@@ -783,7 +837,7 @@ function withTimeout(promise, ms, label) {
 }
 
 // ── CALENDAR ─────────────────────────────────
-let calDate = new Date();
+let calDate = salonNow();
 calDate.setDate(1);
 
 const MONTHS = ['January','February','March','April','May','June',
@@ -792,7 +846,7 @@ const MONTHS = ['January','February','March','April','May','June',
 // Recomputed on every render — a PWA left open overnight used to keep
 // treating the previous day as bookable.
 function startOfToday() {
-  const d = new Date();
+  const d = salonNow();
   d.setHours(0, 0, 0, 0);
   return d;
 }
@@ -834,7 +888,7 @@ function renderCalendar() {
     // Today: grey it out once every remaining slot is too soon or taken,
     // instead of letting the client tap in to find nothing.
     if (!isFullyBooked && date.getTime() === today.getTime()) {
-      const todaySlots = buildSlots(date, dateKey, (bookingsByDate && bookingsByDate[dateKey]) || []);
+      const todaySlots = buildSlots(date, dateKey, (bookingsByDate && bookingsByDate[dateKey]) || [], SERVICE_DURATION);
       if (todaySlots.length && todaySlots.every(s => s.booked)) isFullyBooked = true;
     }
     const dow           = date.getDay();
@@ -871,7 +925,7 @@ function renderCalendar() {
 
 document.getElementById('prevMonth').addEventListener('click', async () => {
   // Past months contain nothing bookable — don't let clients wander into them
-  const now = new Date();
+  const now = salonNow();
   if (calDate.getFullYear() < now.getFullYear() ||
       (calDate.getFullYear() === now.getFullYear() && calDate.getMonth() <= now.getMonth())) {
     return;
@@ -904,8 +958,7 @@ function selectDate(date, dateKey, el) {
   const timeCard = document.getElementById('timeCard');
   timeCard.classList.remove('hidden');
   document.getElementById('dateHeading').textContent = formatDisplayDate(dateKey);
-  document.getElementById('durationNote').textContent =
-    `Each appointment takes about ${durationText()} — the time you pick is your start time.`;
+  document.getElementById('durationNote').textContent = durationNoteText();
   document.getElementById('timeContent').innerHTML = '<div class="loading-msg">Loading…</div>';
   scrollTo(timeCard);
 
@@ -973,6 +1026,11 @@ function renderSlots(slots, date, dateKey) {
       btn.classList.add('mine');
       btn.textContent = `${slot.time} · ${slot.status === 'confirmed' ? 'Yours ✓' : 'Yours (pending)'}`;
       btn.title = 'Your booking';
+    } else if (slot.reason === 'closing') {
+      // Free, but a 3-hour visit starting here would run past closing time
+      btn.classList.add('too-soon');
+      btn.textContent = `${slot.time} · ends too late`;
+      btn.title = `A ${durationText()} visit starting here would finish after closing`;
     } else if (slot.reason === 'past') {
       // Today only — too soon to book, NOT taken by anyone
       btn.classList.add('too-soon');
@@ -1021,17 +1079,25 @@ function renderSlots(slots, date, dateKey) {
     // Late in the evening every slot is merely "too soon", which is not
     // the same thing as the day being full.
     const anyTaken = slots.some(s => s.reason === 'taken' || s.mine);
-    msg.textContent = anyTaken
-      ? 'Fully booked — please choose another date.'
-      : 'No more times today — please choose another date.';
+    const longVisitOnly = state.serviceType === 'combo' &&
+                          slots.some(s => s.reason === 'closing' || s.reason === 'taken');
+    msg.textContent = longVisitOnly
+      ? 'No 3-hour openings on this day — try another date, or book hands and feet on separate days.'
+      : anyTaken
+        ? 'Fully booked — please choose another date.'
+        : 'No more times today — please choose another date.';
     content.appendChild(msg);
   }
 }
 
 // Turn a date's bookings into the slot list the UI renders.
 // Pure function — no network, so it can run against cached or fresh data.
-function buildSlots(date, dateKey, booked) {
+function buildSlots(date, dateKey, booked, duration = chosenDuration()) {
   const dow = date.getDay();
+  const closeAt = closingMinutes(dateKey, dow);
+  // A vacation day can still be opened when the client has their own booking
+  // on it (to see its status) — but nothing on it may be booked.
+  const dayClosed = blockedDates.has(dateKey);
   const rawSlots = slotOverrides[dateKey] !== undefined
     ? slotOverrides[dateKey]
     : (DEFAULT_SCHEDULE[dow] || []);
@@ -1039,14 +1105,15 @@ function buildSlots(date, dateKey, booked) {
 
   return rawSlots.map(slotTime => {
     const own     = booked.find(b => myIds.includes(b.id) && b.time === slotTime);
-    const taken   = isSlotBlocked(slotTime, booked);
+    const taken   = isSlotBlocked(slotTime, booked, duration);
     const tooLate = isSlotInPast(slotTime, dateKey);
+    const overRun = dayClosed || parseTimeToMinutes(slotTime) + duration > closeAt;
     return {
       time:   slotTime,
-      booked: taken || tooLate,
-      // Keep the two reasons apart — a slot that is merely too soon must
-      // not be labelled "already booked".
-      reason: taken ? 'taken' : (tooLate ? 'past' : null),
+      booked: taken || tooLate || overRun,
+      // Keep the reasons apart — a slot that is merely too soon, or too late
+      // to fit a long visit, must not be labelled "already booked".
+      reason: taken ? 'taken' : (tooLate ? 'past' : (overRun ? 'closing' : null)),
       mine:   !!own,
       status: own ? own.status : null
     };
@@ -1119,7 +1186,8 @@ function selectTime(time, btn) {
   formCard.classList.remove('hidden');
   // Show the finish time too — a client picking 8:00 PM should see it runs to 9:30 PM
   document.getElementById('bookingSummary').textContent =
-    `📅 ${formatDisplayDate(state.dateKey)}  ·  ⏰ ${time} – ${slotEndLabel(time)}`;
+    `📅 ${formatDisplayDate(state.dateKey)}  ·  ⏰ ${time} – ${slotEndLabel(time)}` +
+    (state.serviceType === 'combo' ? '  ·  💅 Mani + pedi' : '');
   updateBookBtn();
   scrollTo(formCard);
 }
@@ -1211,13 +1279,13 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
   // Time keeps moving while the form is open. A slot that was fine when it
   // was picked can be under the 1-hour lead time (or already past, if the
   // page was left open overnight) by the time Request is pressed.
-  if (state.dateKey < formatDateKey(new Date()) ||
+  if (state.dateKey < formatDateKey(salonNow()) ||
       isSlotInPast(state.timeSlot, state.dateKey)) {
     alert('Sorry — that time is now too soon to book. Please pick a later time or another day.');
     state.timeSlot = null;
     document.getElementById('formCard').classList.add('hidden');
     renderCalendar();
-    if (state.dateKey >= formatDateKey(new Date())) {
+    if (state.dateKey >= formatDateKey(salonNow())) {
       await loadTimeSlots(state.date, state.dateKey);
     } else {
       document.getElementById('timeCard').classList.add('hidden');
@@ -1235,9 +1303,9 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
     time:          state.timeSlot,
     contactMethod: state.contactMethod,
     contactHandle: handle,
-    service:       '',
+    service:       (SERVICE_OPTIONS[state.serviceType] || SERVICE_OPTIONS.single).service,
     status:        'pending',
-    duration:      SERVICE_DURATION,
+    duration:      chosenDuration(),
     addons:        [],
     notes:         notes,
     email:         email,
@@ -1276,8 +1344,36 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
   };
 
   try {
-    // Quick check first — catches the common case cheaply
-    if (isSlotBlocked(state.timeSlot, await readTaken())) {
+    // Re-read everything that decides availability, in parallel: other
+    // bookings, plus the owner's vacation dates and slot list for this day —
+    // the owner may have closed the day or changed its times since the page
+    // was opened.
+    const [taken, blkDoc, ovDoc] = await Promise.all([
+      readTaken(),
+      withTimeout(window._db.collection('settings').doc('blocked_dates').get(), 6000, 'blocked dates')
+        .catch(() => null),
+      withTimeout(window._db.collection('settings').doc('slots_' + state.dateKey).get(), 6000, 'slot override')
+        .catch(() => null)
+    ]);
+    if (blkDoc) blockedDates = new Set((blkDoc.exists && blkDoc.data().dates) || []);
+    if (ovDoc) {
+      if (ovDoc.exists && Array.isArray(ovDoc.data().slots)) slotOverrides[state.dateKey] = ovDoc.data().slots;
+      else delete slotOverrides[state.dateKey];
+    }
+    const stillOffered = buildSlots(state.date, state.dateKey, [], data.duration)
+      .find(sl => sl.time === state.timeSlot);
+    if (!stillOffered || stillOffered.booked) {
+      alert('Sorry — that time is no longer available. Please pick another time or day.');
+      btn.disabled = false;
+      btn.textContent = 'Request Booking →';
+      state.timeSlot = null;
+      document.getElementById('formCard').classList.add('hidden');
+      renderCalendar();
+      await loadTimeSlots(state.date, state.dateKey);
+      return;
+    }
+
+    if (isSlotBlocked(state.timeSlot, taken, data.duration)) {
       await showJustTaken();
       return;
     }
@@ -1300,7 +1396,7 @@ document.getElementById('bookBtn').addEventListener('click', async () => {
       if (!e || e.code !== 'permission-denied') throw e;
       // Denied: either a rival's lock won the race, or the lock rules aren't
       // published yet. Look at what's actually booked to tell which.
-      if (isSlotBlocked(state.timeSlot, await readTaken())) {
+      if (isSlotBlocked(state.timeSlot, await readTaken(), data.duration)) {
         await showJustTaken();
         return;
       }
@@ -1370,13 +1466,17 @@ function forgetMyBooking(id) {
 
 // Drop IDs we no longer need to track, so the list doesn't grow stale and
 // we stop re-fetching bookings that are already in the past.
-function pruneMyIds(loaded) {
+// Only removes IDs we KNOW are finished with: the booking is in the past, or
+// the server says it no longer exists. IDs that merely failed to load (offline,
+// timeout) are kept, and the list is re-read at write time so a booking made
+// while this was running is never wiped.
+function pruneMyIds(loaded, missingIds) {
   try {
-    const todayKey = formatDateKey(new Date());
-    const keep = loaded
-      .filter(b => b.date >= todayKey)     // past appointments fall away
-      .map(b => b.id);
-    localStorage.setItem(MY_KEY, JSON.stringify(keep));
+    const todayKey = formatDateKey(salonNow());
+    const drop = new Set(missingIds || []);
+    loaded.forEach(b => { if (b.date < todayKey) drop.add(b.id); });
+    if (!drop.size) return;
+    localStorage.setItem(MY_KEY, JSON.stringify(getMyIds().filter(id => !drop.has(id))));
   } catch (e) {}
 }
 
@@ -1387,20 +1487,21 @@ async function loadMyBookings() {
 
   // All at once rather than one after another — with several stored bookings
   // the sequential version cost one network round trip each.
+  const missing = [];
   const settled = await Promise.all(ids.map(id =>
     withTimeout(window._db.collection('bookings').doc(id).get(), 6000, 'my booking')
-      .then(doc => (doc.exists ? { id, ...doc.data() } : null))
+      .then(doc => { if (!doc.exists) { missing.push(id); return null; } return { id, ...doc.data() }; })
       .catch(e => { console.warn('[nailpalette] could not load booking', id, e.message); return null; })
   ));
   const results = settled.filter(Boolean);
 
-  // Forget anything already in the past so this list stays short and we stop
-  // re-reading old bookings from Firestore on every visit.
-  pruneMyIds(results);
+  // Forget anything already in the past (or deleted) so this list stays short
+  // and we stop re-reading old bookings from Firestore on every visit.
+  pruneMyIds(results, missing);
 
   // Today and future. Cancelled ones are kept so a client whose request was
   // declined is told, rather than having the row silently disappear.
-  const todayKey = formatDateKey(new Date());
+  const todayKey = formatDateKey(salonNow());
   myBookings = results
     .filter(b => b.date >= todayKey)
     .sort((a, b) => a.date === b.date
@@ -1424,7 +1525,8 @@ async function loadMyBookings() {
 
     const when = document.createElement('div');
     when.className = 'my-when';
-    when.textContent = `${formatDisplayDate(b.date)} · ${b.time}`;
+    when.textContent = `${formatDisplayDate(b.date)} · ${b.time} – ${slotEndLabel(b.time, b.duration || SERVICE_DURATION)}` +
+      ((parseInt(b.duration) || 0) >= COMBO_DURATION ? ' · Mani + pedi' : '');
     const sub = document.createElement('small');
     sub.textContent =
       b.status === 'confirmed' ? 'See you then!' :
@@ -1463,6 +1565,34 @@ async function loadMyBookings() {
   card.classList.remove('hidden');
   renderCalendar();   // paint the dots on the calendar
 }
+
+function durationNoteText() {
+  const base = `Each appointment takes about ${durationText()} — the time you pick is your start time.`;
+  return state.serviceType === 'combo'
+    ? base + ' Also for two people: one has hands done, the other feet, back to back.'
+    : base;
+}
+
+// ── SERVICE LENGTH TOGGLE ────────────────────
+// Which times are free depends on how long the visit is, so switching
+// redraws the time list and clears any time already picked.
+function setServiceType(type) {
+  if (!SERVICE_OPTIONS[type] || type === state.serviceType) return;
+  state.serviceType = type;
+  ['svcSingle', 'svcCombo'].forEach(id => {
+    const on = (id === 'svcCombo') === (type === 'combo');
+    const el = document.getElementById(id);
+    el.classList.toggle('active', on);
+    el.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  state.timeSlot = null;
+  document.getElementById('formCard').classList.add('hidden');
+  updateBookBtn();
+  document.getElementById('durationNote').textContent = durationNoteText();
+  if (state.date && state.dateKey) loadTimeSlots(state.date, state.dateKey);
+}
+document.getElementById('svcSingle').addEventListener('click', () => setServiceType('single'));
+document.getElementById('svcCombo').addEventListener('click',  () => setServiceType('combo'));
 
 // ── BOOK ANOTHER ─────────────────────────────
 // After a successful request the calendar is hidden. Let the client start a
@@ -1515,7 +1645,7 @@ async function notifyOwner(bk, bookingId) {
       client_name:  bk.name,
       service:      bk.service || 'Not specified',
       date:         formatDisplayDate(bk.date),
-      time:         `${bk.time} – ${slotEndLabel(bk.time)}`,
+      time:         `${bk.time} – ${slotEndLabel(bk.time, bk.duration)}`,
       contact:      bk.contactHandle
                       ? `${bk.contactMethod}: ${bk.contactHandle}`
                       : 'Not provided',
@@ -1552,6 +1682,10 @@ async function checkFullyBookedDays() {
     if (setSnap) {
       slotOverrides = {};
       setSnap.docs.forEach(d => {
+        if (d.id === 'blocked_dates') {
+          blockedDates = new Set((d.data() && d.data().dates) || []);
+          return;
+        }
         if (!d.id.startsWith('slots_')) return;
         const data = d.data();
         if (data && Array.isArray(data.slots)) {
@@ -1614,22 +1748,13 @@ async function init() {
   // Appointment length is stated in one place and written into the copy,
   // so the wording can never drift from SERVICE_DURATION.
   const pd = document.getElementById('policyDuration');
-  if (pd) pd.textContent = durationText();
+  if (pd) pd.textContent = `${durationText(SERVICE_DURATION)} (${durationText(COMBO_DURATION)} for manicure + pedicure)`;
 
   // Render immediately so the calendar is never blank while we wait on network
   renderCalendar();
 
-  if (window._db) {
-    try {
-      const doc = await withTimeout(
-        window._db.collection('settings').doc('blocked_dates').get(),
-        6000, 'blocked dates');
-      if (doc.exists) blockedDates = new Set(doc.data().dates || []);
-    } catch (e) {
-      console.warn('[nailpalette] blocked dates skipped:', e.message);
-    }
-  }
-
+  // Blocked (vacation) dates arrive with the same settings read as the slot
+  // overrides — one round trip at load instead of two in a row.
   try {
     await checkFullyBookedDays();
   } catch (e) {
