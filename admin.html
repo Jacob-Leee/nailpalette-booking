@@ -405,6 +405,34 @@ button.slot-chip { cursor: pointer; font-family: inherit; flex-direction: column
 .slot-count { font-size: 11px; color: var(--light); }
 .slot-vac-note { font-size: 12px; color: #B06A6A; background: rgba(190,150,150,.10); border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; }
 .slot-quick { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.slot-modes { display: flex; gap: 8px; margin-bottom: 10px; }
+/* Open Hours looks deliberately different from the bookings Calendar:
+   warm gold card, square tiles with a big number, no booking chips */
+.appt-banner { border-left: 3px solid var(--sage); padding: 4px 0 4px 12px; margin-bottom: 14px; }
+.ab-title { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 22px; color: var(--sage); }
+.ab-sub { font-size: 11px; color: var(--light); line-height: 1.6; }
+.hours-banner { border-left: 3px solid #c9a961; padding: 4px 0 4px 12px; margin-bottom: 14px; }
+.hb-title { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 22px; color: #8a6d2f; }
+.hb-sub { font-size: 11px; color: var(--light); line-height: 1.6; }
+.admin-cal-wrap.hours-cal { background: #FBF7EE; border: 1px solid #e3d3a8; }
+.hours-cal .admin-cal-title { color: #8a6d2f; }
+.hours-cal .admin-cal-title::before { content: '🕒 '; font-size: 14px; }
+.hours-cal .admin-cal-grid { gap: 4px; }
+.hours-cal .slot-cal-day { background: #fff; border: 0.5px solid #eadfc4; border-radius: 10px; min-height: 56px; }
+.hours-cal .slot-cal-day .acd-num { text-align: left; font-size: 10px; color: #b29a63; }
+.hours-cal .slot-cal-day .sc-open { font-size: 15px; }
+.hours-cal .slot-cal-day.past-day { background: transparent; border-color: transparent; }
+.hours-cal .slot-cal-day.custom-day { border: 1.5px solid #c9a961; }
+.hours-cal .slot-cal-day.vacation-day, .hours-cal .slot-cal-day.closed-day {
+  background: repeating-linear-gradient(135deg, #f6eaea 0 6px, #fbf3f3 6px 12px); border-color: rgba(190,150,150,.45); }
+.slot-cal-day.in-range { background: rgba(201,169,97,.20) !important; border-color: #c9a961 !important; }
+.slot-cal-day.range-end { box-shadow: inset 0 0 0 1.5px #c9a961; }
+.bulk-bar { background: var(--surface); border: 0.5px solid #c9a961; border-radius: 14px; padding: 12px; margin-bottom: 16px; }
+.bulk-label { font-size: 12px; color: var(--mid); margin-bottom: 10px; }
+.bulk-act:disabled { opacity: .4; cursor: default; }
+.vac-box { margin-bottom: 18px; }
+.vac-title { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--light); margin-bottom: 8px; }
+.vac-none { font-size: 12px; color: var(--light); font-style: italic; }
 #saveSlotsBtn.pulse { box-shadow: 0 0 0 3px rgba(201,169,97,.35); }
 @media (max-width: 600px) {
   button.slot-chip { min-width: calc(33.3% - 6px); padding: 8px 6px; }
@@ -969,8 +997,7 @@ button.slot-chip { cursor: pointer; font-family: inherit; flex-direction: column
     <div class="tab-nav">
       <button class="tab-btn active" data-tab="bookings">Bookings</button>
       <button class="tab-btn" data-tab="calendar">Calendar</button>
-      <button class="tab-btn" data-tab="slots">Manage Slots</button>
-      <button class="tab-btn" data-tab="vacation">Vacation</button>
+      <button class="tab-btn" data-tab="slots">Open Hours</button>
     </div>
 
     <!-- TAB: BOOKINGS -->
@@ -983,12 +1010,19 @@ button.slot-chip { cursor: pointer; font-family: inherit; flex-direction: column
 
     <!-- TAB: SLOTS -->
     <div class="tab-panel" id="tab-slots">
-      <div class="section-title">Manage Times</div>
-      <p class="slot-help">Tap a day, then tap a time to switch it:
+      <div class="hours-banner">
+        <div class="hb-title">Open Hours</div>
+        <div class="hb-sub">Which times clients can book · vacation · closed days.<br>To see or move <b>appointments</b>, use the Calendar tab.</div>
+      </div>
+      <div class="slot-modes">
+        <button class="btn-sm gold" id="modeOne">Edit one day</button>
+        <button class="btn-sm" id="modeMany">Select several days</button>
+      </div>
+      <p class="slot-help" id="slotHelp">Tap a day, then tap a time to switch it:
         <span class="lg lg-open">OPEN</span> → <span class="lg lg-held">BOOKED LOOK</span> → <span class="lg lg-off">OFF</span>.
         Clients see "booked look" times greyed out (✱✱✱) and don't see "off" times at all.</p>
 
-      <div class="admin-cal-wrap">
+      <div class="admin-cal-wrap hours-cal">
         <div class="admin-cal-header">
           <button class="btn-sm" id="slotCalPrev">‹</button>
           <span class="admin-cal-title" id="slotCalTitle"></span>
@@ -1007,18 +1041,35 @@ button.slot-chip { cursor: pointer; font-family: inherit; flex-direction: column
         </div>
       </div>
 
+      <div id="bulkBar" class="bulk-bar" style="display:none">
+        <div class="bulk-label" id="bulkLabel"></div>
+        <div class="slot-quick">
+          <button class="btn-sm gold bulk-act" id="bulkVac">Vacation</button>
+          <button class="btn-sm bulk-act" id="bulkUnvac">End vacation</button>
+          <button class="btn-sm bulk-act" id="bulkClose">Close days</button>
+          <button class="btn-sm bulk-act" id="bulkNormal">Normal hours</button>
+          <button class="btn-sm" id="bulkClear">Clear</button>
+        </div>
+      </div>
+
+      <div class="vac-box">
+        <div class="vac-title">Upcoming vacation</div>
+        <div class="blocked-dates-list" id="vacList"></div>
+      </div>
+
       <div id="slotEditor" style="display:none">
         <div class="slot-editor-head">
           <div class="section-title" id="slotDateLabel" style="margin:0"></div>
           <div class="slot-count" id="slotCount"></div>
         </div>
-        <div class="slot-vac-note" id="slotVacNote" style="display:none">This day is blocked as vacation — clients can't book it whatever you set here.</div>
+        <div class="slot-vac-note" id="slotVacNote" style="display:none">This day is vacation — clients can't book it whatever times you set. Tap "End vacation" to open it again.</div>
         <div class="slot-list" id="slotList"></div>
         <div class="slot-quick">
           <button class="btn-sm" id="slotAllOpen">All open</button>
           <button class="btn-sm" id="slotAllHeld">All booked look</button>
           <button class="btn-sm" id="slotAllOff">Close day</button>
           <button class="btn-sm" id="slotResetBtn">Normal hours</button>
+          <button class="btn-sm" id="slotVacBtn">Vacation</button>
         </div>
         <div class="slot-add-form">
           <input type="time" id="newSlotTime" step="300">
@@ -1028,37 +1079,12 @@ button.slot-chip { cursor: pointer; font-family: inherit; flex-direction: column
       </div>
     </div>
 
-    <!-- TAB: VACATION -->
-    <div class="tab-panel" id="tab-vacation">
-      <div class="section-title">Block Vacation Dates</div>
-      <p style="font-size:12px;color:var(--light);margin-bottom:16px;line-height:1.6">
-        Blocked dates won't appear as available on the booking page.
-      </p>
-
-      <div class="vacation-block">
-        <div class="vacation-row">
-          <div>
-            <label>From</label>
-            <input type="date" id="vacFrom">
-          </div>
-          <div>
-            <label>To</label>
-            <input type="date" id="vacTo">
-          </div>
-          <div style="padding-top:22px">
-            <button class="btn-sm gold" id="blockVacBtn">Block Range</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="section-title">Currently Blocked</div>
-      <div class="blocked-dates-list" id="blockedList">
-        <div style="font-size:12px;color:var(--light);font-style:italic">None blocked</div>
-      </div>
-    </div>
-
     <!-- TAB: CALENDAR -->
     <div class="tab-panel" id="tab-calendar">
+      <div class="appt-banner">
+        <div class="ab-title">Appointments</div>
+        <div class="ab-sub">Tap a day to see, add or move bookings.<br>To change which times clients can book, use <b>Open Hours</b>.</div>
+      </div>
 
       <div class="admin-cal-wrap">
         <div class="admin-cal-header">
@@ -1252,7 +1278,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-    if (btn.dataset.tab === 'vacation') loadBlockedDates();
     if (btn.dataset.tab === 'calendar') initAdminCalendar();
     if (btn.dataset.tab === 'slots') initSlotCalendar();
   });
@@ -1281,7 +1306,7 @@ function renderBookings(docs) {
   const list = document.getElementById('bookingList');
   // Local date — toISOString() is UTC and reads as "yesterday" in Sydney
   // between midnight and ~10am, which kept stale bookings in this list.
-  const today = toDateKey(new Date());
+  const today = toDateKey(salonNow());
   const upcoming = docs
     .filter(d => d.date >= today && d.status !== 'cancelled')
     .sort((a, b) => {
@@ -1455,7 +1480,7 @@ async function sendClientDecline(bk) {
 }
 
 function updateStats(docs) {
-  const today = toDateKey(new Date());   // local, not UTC
+  const today = toDateKey(salonNow());   // local, not UTC
   const upcoming = docs.filter(d => d.date >= today);
   document.getElementById('statPending').textContent   = upcoming.filter(d => d.status === 'pending').length;
   document.getElementById('statConfirmed').textContent = upcoming.filter(d => d.status === 'confirmed').length;
@@ -1553,6 +1578,7 @@ function slotSummary(dateKey) {
 async function initSlotCalendar() {
   if (db) await fetchCalBookings();
   renderSlotCalendar();
+  renderVacationList();
 }
 
 function renderSlotCalendar() {
@@ -1563,8 +1589,7 @@ function renderSlotCalendar() {
   grid.innerHTML = '';
   const first = new Date(y, m, 1).getDay();
   const days  = new Date(y, m + 1, 0).getDate();
-  const t = new Date(); const todayKey =
-    `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+  const todayKey = toDateKey(salonNow());   // Sydney date, even if the phone is set to another zone
   for (let i = 0; i < first; i++) grid.appendChild(document.createElement('div'));
   for (let d = 1; d <= days; d++) {
     const key = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
@@ -1586,14 +1611,21 @@ function renderSlotCalendar() {
     if (s.custom && !vac) el.classList.add('custom-day');
     if (key === todayKey) el.classList.add('today-day');
     if (key < todayKey) el.classList.add('past-day');
-    else { el.classList.add('clickable'); el.addEventListener('click', () => openSlotDay(key)); }
-    if (key === slotDay) el.classList.add('selected-day');
+    else {
+      el.classList.add('clickable');
+      el.addEventListener('click', () => slotSelectMode ? onRangeTap(key) : openSlotDay(key));
+    }
+    if (!slotSelectMode && key === slotDay) el.classList.add('selected-day');
+    if (slotSelectMode && selectedDates().includes(key)) {
+      el.classList.add('in-range');
+      if (key === rangeStart || key === rangeEnd) el.classList.add('range-end');
+    }
     grid.appendChild(el);
   }
 }
 
-function openSlotDay(key) {
-  if (slotDirty && slotDay && slotDay !== key &&
+function openSlotDay(key, keepEdits) {
+  if (!keepEdits && slotDirty && slotDay && slotDay !== key &&
       !confirm('You have unsaved changes for ' + formatDisplayDate(slotDay) + '. Discard them?')) return;
   slotDay = key;
   slotDirty = false;
@@ -1605,7 +1637,9 @@ function openSlotDay(key) {
   });
   document.getElementById('slotEditor').style.display = 'block';
   document.getElementById('slotDateLabel').textContent = formatDisplayDate(key);
-  document.getElementById('slotVacNote').style.display = adminBlockedDates.has(key) ? 'block' : 'none';
+  const vac = adminBlockedDates.has(key);
+  document.getElementById('slotVacNote').style.display = vac ? 'block' : 'none';
+  document.getElementById('slotVacBtn').textContent = vac ? 'End vacation' : 'Vacation';
   renderSlots();
   renderSlotCalendar();
   document.getElementById('slotEditor').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1678,6 +1712,12 @@ async function saveSlotDay(resetToDefault) {
   const held  = Object.keys(slotState).filter(t => slotState[t] === 'held').sort(byTime);
   const def   = slotDefaultFor(slotDay);
   const isDefault = !held.length && slots.length === def.length && slots.every((t, i) => t === def[i]);
+  // Bookings whose start time would no longer be offered (time OFF / day closed)
+  if (!resetToDefault) {
+    try { await fetchCalBookings(); } catch (e) {}   // a booking may have come in meanwhile
+    const stranded = liveBookingsOn([slotDay], b => !slots.includes(b.time));
+    if (!confirmStranded(stranded, slots.length ? 'Some times you turned OFF' : 'You are closing this day')) return;
+  }
   const btn = document.getElementById('saveSlotsBtn');
   if (btn.disabled) return;
   btn.disabled = true;
@@ -1691,9 +1731,7 @@ async function saveSlotDay(resetToDefault) {
         : `✓ Saved — ${slots.length - held.length} open${held.length ? `, ${held.length} booked-look` : ''}`);
     }
     slotDirty = false;
-    await fetchCalBookings();
-    const keep = slotDay; openSlotDay(keep);
-    if (calInitialized) renderAdminCalendar();
+    await refreshSchedule();
   } catch (e) {
     showToast('Error saving: ' + e.message);
   } finally {
@@ -1705,95 +1743,165 @@ document.getElementById('slotResetBtn').addEventListener('click', () => {
   if (confirm('Go back to the normal weekly hours for ' + formatDisplayDate(slotDay) + '?')) saveSlotDay(true);
 });
 
-// ── VACATION ──────────────────────────────────────
-async function loadBlockedDates() {
-  if (!db) {
-    document.getElementById('blockedList').innerHTML = '<div style="font-size:12px;color:var(--light);font-style:italic">Firebase not configured</div>';
-    return;
-  }
-  try {
-    const doc = await db.collection('settings').doc('blocked_dates').get();
-    const blocked = doc.exists ? (doc.data().dates || []) : [];
-    renderBlockedDates(blocked);
-  } catch (e) {}
+// ── VACATION + SEVERAL-DAY ACTIONS (inside the Schedule tab) ─────────────
+// Live bookings on the given dates, optionally limited per date by a filter
+function liveBookingsOn(dates, keep = () => true) {
+  const out = [];
+  dates.forEach(d => (adminCalBookings[d] || []).forEach(b => {
+    if ((b.status === 'pending' || b.status === 'confirmed') && keep(b, d)) out.push(b);
+  }));
+  return out.sort((a, b) => a.date === b.date
+    ? parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time) : (a.date < b.date ? -1 : 1));
+}
+// Asks before doing something that leaves bookings stranded. true = go ahead.
+function confirmStranded(bookings, what) {
+  if (!bookings.length) return true;
+  const list = bookings.map(b => `· ${formatDisplayDate(b.date)} ${timeRange(b)} — ${b.name || 'client'}`).join('\n');
+  return confirm(`${what} — but these bookings are already on it:\n\n${list}\n\n` +
+                 `They will NOT be cancelled automatically. Cancel or move them yourself ` +
+                 `and let the clients know.\n\nContinue anyway?`);
 }
 
-function renderBlockedDates(dates) {
-  const list = document.getElementById('blockedList');
-  if (!dates.length) {
-    list.innerHTML = '<div style="font-size:12px;color:var(--light);font-style:italic">None blocked</div>';
-    return;
-  }
-  list.innerHTML = dates.map(d => `
-    <div class="blocked-chip">
-      ${formatDisplayDate(d)}
-      <span class="unblock" onclick="unblockDate('${d}')">×</span>
-    </div>
-  `).join('');
-}
-
-document.getElementById('blockVacBtn').addEventListener('click', async () => {
-  const from = document.getElementById('vacFrom').value;
-  const to   = document.getElementById('vacTo').value;
-  if (!from || !to) { showToast('Select both dates'); return; }
-  if (!db) { showToast('Firebase not configured'); return; }
-
-  if (from > to) { showToast('End date must be after the start date'); return; }
-
-  const dates = [];
-  let cur = new Date(from + 'T12:00:00');
-  const end = new Date(to + 'T12:00:00');
-  while (cur <= end) {
-    // Local date key, not toISOString() — the latter converts to UTC and can
-    // shift the day, which would not match the keys the booking page builds.
-    dates.push(toDateKey(cur));
-    cur.setDate(cur.getDate() + 1);
-  }
-
-  // Blocking days that already have bookings doesn't cancel them — make sure
-  // the owner knows who will need a message.
+async function setVacation(dates, on) {
+  if (!db || !dates.length) return false;
+  if (on) await fetchCalBookings();          // warn from fresh data, not the cached view
+  if (on && !confirmStranded(liveBookingsOn(dates),
+        dates.length > 1 ? `You're blocking ${dates.length} days as vacation` : `You're blocking ${formatDisplayDate(dates[0])} as vacation`))
+    return false;
   try {
-    const snap = await db.collection('bookings').get();
-    const affected = snap.docs.map(d => d.data())
-      .filter(b => (b.status === 'pending' || b.status === 'confirmed') && dates.includes(b.date))
-      .sort((a, b) => a.date === b.date ? parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time) : (a.date < b.date ? -1 : 1));
-    if (affected.length) {
-      const list = affected.map(b => `· ${formatDisplayDate(b.date)} ${timeRange(b)} — ${b.name || 'client'}`).join('\n');
-      if (!confirm(`These bookings fall inside the dates you're blocking:\n\n${list}\n\n` +
-                   `They will NOT be cancelled automatically — you'll need to cancel or move them ` +
-                   `and let the clients know.\n\nBlock the dates anyway?`)) return;
-    }
-  } catch (e) { /* if the check fails, carry on — blocking is still safe */ }
-
-  try {
-    const doc = await db.collection('settings').doc('blocked_dates').get();
+    const ref = db.collection('settings').doc('blocked_dates');
+    const doc = await ref.get();
     const existing = doc.exists ? (doc.data().dates || []) : [];
-    const merged = [...new Set([...existing, ...dates])].sort();
-    await db.collection('settings').doc('blocked_dates').set({ dates: merged });
-    showToast(`✓ Blocked ${dates.length} date(s)`);
-    loadBlockedDates();
-    calInitialized = false;
-    await fetchCalBookings();
-    renderAdminCalendar();
+    const next = on ? [...new Set([...existing, ...dates])].sort()
+                    : existing.filter(d => !dates.includes(d));
+    await ref.set({ dates: next });
+    showToast(on ? `✓ ${dates.length} day(s) set as vacation` : `✓ Vacation removed from ${dates.length} day(s)`);
+    await refreshSchedule();
+    return true;
   } catch (e) {
-    showToast('Error blocking dates');
+    showToast('Error: ' + e.message);
+    return false;
   }
-});
-
-async function unblockDate(date) {
-  if (!db) return;
-  try {
-    const doc = await db.collection('settings').doc('blocked_dates').get();
-    const existing = doc.exists ? (doc.data().dates || []) : [];
-    const updated = existing.filter(d => d !== date);
-    await db.collection('settings').doc('blocked_dates').set({ dates: updated });
-    showToast('✓ Date unblocked');
-    loadBlockedDates();
-    calInitialized = false;
-    await fetchCalBookings();
-    renderAdminCalendar();
-  } catch (e) {}
 }
+// Kept for any older call sites
+async function unblockDate(date) { return setVacation([date], false); }
+
+async function refreshSchedule() {
+  await fetchCalBookings();
+  renderSlotCalendar();
+  renderVacationList();
+  if (slotDay && !slotSelectMode) openSlotDay(slotDay, true);
+  if (calInitialized) renderAdminCalendar();
+}
+
+// Upcoming vacation shown as ranges: "Sat 20 Dec – Mon 5 Jan  ×"
+function renderVacationList() {
+  const el = document.getElementById('vacList');
+  const today = toDateKey(salonNow());
+  const dates = [...adminBlockedDates].filter(d => d >= today).sort();
+  if (!dates.length) { el.innerHTML = '<span class="vac-none">No vacation booked in</span>'; return; }
+  const ranges = [];
+  dates.forEach(d => {
+    const last = ranges[ranges.length - 1];
+    if (last) {
+      const n = new Date(last[1] + 'T12:00:00'); n.setDate(n.getDate() + 1);
+      if (toDateKey(n) === d) { last[1] = d; return; }
+    }
+    ranges.push([d, d]);
+  });
+  const short = k => new Date(k + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+  el.innerHTML = ranges.map(([a, b]) => {
+    const list = [];
+    for (let c = new Date(a + 'T12:00:00'); toDateKey(c) <= b; c.setDate(c.getDate() + 1)) list.push(toDateKey(c));
+    return `<div class="blocked-chip">${a === b ? short(a) : short(a) + ' – ' + short(b)}
+      <span class="unblock" title="Remove this vacation" onclick='endVacationRange(${JSON.stringify(list)})'>×</span></div>`;
+  }).join('');
+}
+async function endVacationRange(list) {
+  if (confirm('Open these days again for bookings?')) await setVacation(list, false);
+}
+
+// ── Select several days (tap first day, then last day) ──
+let slotSelectMode = false;
+let rangeStart = null, rangeEnd = null;
+
+function selectedDates() {
+  if (!rangeStart) return [];
+  const a = rangeStart, b = rangeEnd || rangeStart;
+  const out = [];
+  for (let c = new Date(a + 'T12:00:00'); toDateKey(c) <= b; c.setDate(c.getDate() + 1)) out.push(toDateKey(c));
+  return out;
+}
+function setSelectMode(on) {
+  if (on && slotDirty && !confirm('Discard unsaved changes for ' + formatDisplayDate(slotDay) + '?')) return;
+  slotSelectMode = on;
+  rangeStart = rangeEnd = null;
+  if (on) { slotDirty = false; slotDay = null; document.getElementById('slotEditor').style.display = 'none'; }
+  document.getElementById('modeOne').classList.toggle('gold', !on);
+  document.getElementById('modeMany').classList.toggle('gold', on);
+  document.getElementById('slotHelp').innerHTML = on
+    ? 'Tap the <b>first</b> day, then the <b>last</b> day, then choose what to do with them.'
+    : slotHelpHTML;
+  renderBulkBar();
+  renderSlotCalendar();
+}
+const slotHelpHTML = document.getElementById('slotHelp').innerHTML;
+function onRangeTap(key) {
+  if (!rangeStart || rangeEnd) { rangeStart = key; rangeEnd = null; }
+  else if (key < rangeStart)  { rangeEnd = rangeStart; rangeStart = key; }
+  else                         { rangeEnd = key; }
+  renderBulkBar();
+  renderSlotCalendar();
+}
+function renderBulkBar() {
+  const bar = document.getElementById('bulkBar');
+  bar.style.display = slotSelectMode ? 'block' : 'none';
+  if (!slotSelectMode) return;
+  const ds = selectedDates();
+  const short = k => new Date(k + 'T12:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+  document.getElementById('bulkLabel').textContent = !ds.length
+    ? 'Tap the first day, then the last day'
+    : !rangeEnd ? `${short(ds[0])} — now tap the last day (or use just this day)`
+    : `${short(ds[0])} – ${short(ds[ds.length - 1])} · ${ds.length} days`;
+  bar.querySelectorAll('.bulk-act').forEach(b => b.disabled = !ds.length);
+}
+async function bulkAction(kind) {
+  const ds = selectedDates();
+  if (!ds.length || !db) return;
+  let ok = false;
+  if (kind === 'vac')   ok = await setVacation(ds, true);
+  if (kind === 'unvac') ok = await setVacation(ds, false);
+  if (kind === 'close' || kind === 'normal') {
+    if (kind === 'close') await fetchCalBookings();
+    if (kind === 'close' && !confirmStranded(liveBookingsOn(ds), `You're closing ${ds.length} day(s)`)) return;
+    try {
+      const b = db.batch ? db.batch() : null;
+      for (const d of ds) {
+        const ref = db.collection('settings').doc('slots_' + d);
+        if (kind === 'close') { b ? b.set(ref, { slots: [], held: [] }) : await ref.set({ slots: [], held: [] }); }
+        else                  { b ? b.delete(ref) : await ref.delete(); }
+      }
+      if (b) await b.commit();
+      showToast(kind === 'close' ? `✓ ${ds.length} day(s) closed` : `✓ ${ds.length} day(s) back to normal hours`);
+      await refreshSchedule();
+      ok = true;
+    } catch (e) { showToast('Error: ' + e.message); }
+  }
+  if (ok) { rangeStart = rangeEnd = null; renderBulkBar(); renderSlotCalendar(); }
+}
+document.getElementById('modeOne').addEventListener('click',  () => setSelectMode(false));
+document.getElementById('modeMany').addEventListener('click', () => setSelectMode(true));
+document.getElementById('bulkVac').addEventListener('click',    () => bulkAction('vac'));
+document.getElementById('bulkUnvac').addEventListener('click',  () => bulkAction('unvac'));
+document.getElementById('bulkClose').addEventListener('click',  () => bulkAction('close'));
+document.getElementById('bulkNormal').addEventListener('click', () => bulkAction('normal'));
+document.getElementById('bulkClear').addEventListener('click',  () => { rangeStart = rangeEnd = null; renderBulkBar(); renderSlotCalendar(); });
+document.getElementById('slotVacBtn').addEventListener('click', async () => {
+  if (!slotDay) return;
+  if (slotDirty && !confirm('Discard unsaved time changes for this day?')) return;
+  slotDirty = false;
+  await setVacation([slotDay], !adminBlockedDates.has(slotDay));
+});
 
 // ── BOOKING MODAL ────────────────────────────────
 let modalEditId = null;    // null = new booking, string = editing existing
@@ -1881,7 +1989,8 @@ async function populateAdminTimeSelect(dateKey, excludeBookingId = null) {
     // Admin can always pick any time — conflicts are flagged, not blocked
     const opt = document.createElement('option');
     opt.value = slotTime;
-    opt.textContent = isBlocked ? `${slotTime}  ⚠ overlaps` : slotTime;
+    const held = (adminSlotHeld[dateKey] || []).includes(slotTime);
+    opt.textContent = slotTime + (isBlocked ? '  ⚠ overlaps' : '') + (held ? '  · booked look' : '');
     if (isBlocked) opt.style.color = '#B08968';
     select.appendChild(opt);
   });
@@ -2193,7 +2302,7 @@ function renderAdminCalendar() {
 
   const firstDay   = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const todayKey   = toDateKey(new Date());   // local, not UTC
+  const todayKey   = toDateKey(salonNow());   // local, not UTC
 
   const grid = document.getElementById('adminCalGrid');
   grid.innerHTML = '';
@@ -2291,7 +2400,7 @@ function renderAdminCalendar() {
       if (adminBlockedDates.has(newDate)) warnings.push('· That date is marked as vacation');
       const ov = adminSlotOverrides[newDate];
       if (Array.isArray(ov) && ov.length === 0) warnings.push('· That date has no slots (closed)');
-      if (newDate < toDateKey(new Date())) warnings.push('· That date is in the past');
+      if (newDate < toDateKey(salonNow())) warnings.push('· That date is in the past');
 
       if (warnings.length) {
         const ok = confirm(
@@ -2419,6 +2528,18 @@ function parseTimeToMinutes(timeStr) {
 }
 
 // Local YYYY-MM-DD — must match formatDateKey() in index.html
+// Sydney "now" as a local Date — the owner's phone may be on another time zone
+// (e.g. travelling), but "today" and "past" must follow the salon.
+function salonNow() {
+  try {
+    const p = {};
+    new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit',
+      day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(new Date()).forEach(x => { p[x.type] = x.value; });
+    return new Date(+p.year, +p.month - 1, +p.day, (+p.hour) % 24, +p.minute);
+  } catch (e) { return new Date(); }
+}
+
 function toDateKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

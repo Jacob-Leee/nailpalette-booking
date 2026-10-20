@@ -528,7 +528,7 @@ body {
         Manicure + pedicure
       </button>
     </div>
-    <p class="duration-note" id="durationNote"></p>
+    <p class="duration-note" id="durationNote" hidden></p>
     <div id="timeContent">
       <div class="loading-msg">Loading…</div>
     </div>
@@ -616,7 +616,7 @@ body {
 /* ══════════════════════════════════════════════
    nailpalette.syd — Single Page Booking
    ══════════════════════════════════════════════ */
-const APP_VERSION = 'v15-slotcal';
+const APP_VERSION = 'v18';
 console.log('[nailpalette] build', APP_VERSION);
 
 // ── FIREBASE INIT ─────────────────────────────
@@ -946,6 +946,9 @@ document.getElementById('prevMonth').addEventListener('click', async () => {
   renderCalendar();
 });
 document.getElementById('nextMonth').addEventListener('click', async () => {
+  // Day 1 first — on the 29th–31st, setMonth(+1) overflows and skips a month
+  // (31 Oct → "31 Nov" → 1 Dec), so November would never be shown.
+  calDate.setDate(1);
   calDate.setMonth(calDate.getMonth() + 1);
   await checkFullyBookedDays();
   renderCalendar();
