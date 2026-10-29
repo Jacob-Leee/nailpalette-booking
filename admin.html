@@ -1322,7 +1322,7 @@ function renderBookings(docs) {
   list.innerHTML = upcoming.map(bk => `
     <div class="booking-card status-${esc(bk.status || 'pending')}" id="bk-${esc(bk.id)}">
       <div>
-        <div class="bk-service">${esc(bk.service) || '—'}</div>
+        <div class="bk-service">${esc(serviceLabel(bk))}</div>
         <div class="bk-datetime">
           ${esc(formatDisplayDate(bk.date))} · ${esc(timeRange(bk))}${bookingDuration(bk) >= COMBO_DURATION ? ' · 3h' : ''}
         </div>
@@ -1429,7 +1429,7 @@ async function sendClientConfirmation(bk) {
     await emailjs.send(svc, tpl, {
       to_email:    bk.email,
       client_name: bk.name,
-      service:     bk.service || 'Nail appointment',
+      service:     serviceLabel(bk),
       date:        formatDisplayDate(bk.date),
       time:        timeRange(bk),
       contact:     `${bk.contactMethod || 'phone'}: ${bk.contactHandle || '—'}`,
@@ -1467,7 +1467,7 @@ async function sendClientDecline(bk) {
     await emailjs.send(svc, tpl, {
       to_email:     bk.email,
       client_name:  bk.name || 'there',
-      service:      bk.service || 'your appointment',
+      service:      serviceLabel(bk),
       date:         formatDisplayDate(bk.date),
       time:         timeRange(bk),
       booking_link: base + 'index.html'
@@ -1500,6 +1500,11 @@ const SERVICE_DURATION = 90;
 const COMBO_DURATION = 180;
 
 // "1:00 PM – 4:00 PM" for a booking, using its own length
+// Client requests carry no service name — label them by length instead of "—"
+function serviceLabel(bk) {
+  if (bk && bk.service) return bk.service;
+  return bookingDuration(bk) >= COMBO_DURATION ? 'Manicure + pedicure' : 'Manicure or pedicure';
+}
 function bookingDuration(bk) {
   return parseInt(bk && bk.duration) || SERVICE_DURATION;
 }
@@ -2452,7 +2457,7 @@ function showCalDay(dateKey, bks, el) {
     panel.innerHTML = bks.map(bk => `
       <div class="booking-card status-${esc(bk.status || 'pending')}" id="bk-cal-${esc(bk.id || '')}">
         <div>
-          <div class="bk-service">${esc(bk.service) || '—'}</div>
+          <div class="bk-service">${esc(serviceLabel(bk))}</div>
           <div class="bk-datetime">${esc(timeRange(bk))}${bookingDuration(bk) >= COMBO_DURATION ? ' · 3h' : ''}</div>
           <div class="bk-client">
             <strong>${esc(bk.name) || '—'}</strong><br>

@@ -616,7 +616,7 @@ body {
 /* ══════════════════════════════════════════════
    nailpalette.syd — Single Page Booking
    ══════════════════════════════════════════════ */
-const APP_VERSION = 'v18';
+const APP_VERSION = 'v19';
 console.log('[nailpalette] build', APP_VERSION);
 
 // ── FIREBASE INIT ─────────────────────────────
@@ -1661,7 +1661,7 @@ async function notifyOwner(bk, bookingId) {
       to_name:      'nailpalette.syd',
       to_email:     window._OWNER_EMAIL || '',
       client_name:  bk.name,
-      service:      bk.service || 'Not specified',
+      service:      bk.service || ((parseInt(bk.duration) || SERVICE_DURATION) >= COMBO_DURATION ? 'Manicure + pedicure' : 'Manicure or pedicure'),
       date:         formatDisplayDate(bk.date),
       time:         `${bk.time} – ${slotEndLabel(bk.time, bk.duration)}`,
       contact:      bk.contactHandle

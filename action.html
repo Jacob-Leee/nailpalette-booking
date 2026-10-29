@@ -284,6 +284,18 @@ function timeRange(bk) {
   return `${bk.time} – ${eh % 12 || 12}:${String(em).padStart(2, '0')} ${eh >= 12 ? 'PM' : 'AM'}`;
 }
 
+// Client bookings don't store a service name — label them by length
+function serviceLabel(bk) {
+  if (bk && bk.service) return bk.service;
+  return (parseInt(bk && bk.duration) || 90) >= 180 ? 'Manicure + pedicure' : 'Manicure or pedicure';
+}
+function toMin(t) {
+  const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec((t || '').trim());
+  if (!m) return null;
+  let h = parseInt(m[1]) % 12; if (m[3].toUpperCase() === 'PM') h += 12;
+  return h * 60 + parseInt(m[2]);
+}
+
 function esc(s) {
   if (s === null || s === undefined) return '';
   return String(s)
@@ -294,7 +306,7 @@ function esc(s) {
 function detailHTML(bk) {
   return `
     <div class="detail-row"><span class="detail-label">Client</span><span class="detail-val">${esc(bk.name) || '—'}</span></div>
-    <div class="detail-row"><span class="detail-label">Service</span><span class="detail-val">${esc(bk.service) || '—'}</span></div>
+    <div class="detail-row"><span class="detail-label">Service</span><span class="detail-val">${esc(serviceLabel(bk))}</span></div>
     <div class="detail-row"><span class="detail-label">Date</span><span class="detail-val">${esc(formatDate(bk.date))}</span></div>
     <div class="detail-row"><span class="detail-label">Time</span><span class="detail-val">${esc(timeRange(bk))}</span></div>
     <div class="detail-row"><span class="detail-label">${esc(bk.contactMethod === 'instagram' ? 'Instagram' : 'Phone')}</span><span class="detail-val">${esc(bk.contactHandle) || '—'}</span></div>
@@ -389,7 +401,20 @@ async function loadBooking() {
 
     // Show review screen — don't process yet
     if (action === 'confirm') {
-      document.getElementById('reviewConfirmDetail').innerHTML = detailHTML(currentBooking);
+      let warn = '';
+      // Same check as the dashboard: say so if confirming would double-book
+      try {
+        const s = toMin(currentBooking.time), e = s + (parseInt(currentBooking.duration) || 90);
+        const day = await db.collection('bookings').where('date', '==', currentBooking.date).get();
+        const clashes = day.docs.filter(d => d.id !== bookingId).map(d => d.data())
+          .filter(b => (b.status === 'pending' || b.status === 'confirmed') && s !== null &&
+                       toMin(b.time) < e && s < toMin(b.time) + (parseInt(b.duration) || 90));
+        if (clashes.length) {
+          warn = `<div class="detail-row" style="color:#B06A6A"><span class="detail-label">⚠ Overlaps</span>` +
+                 `<span class="detail-val">${clashes.map(b => esc((b.name || 'booking') + ' ' + timeRange(b))).join('<br>')}</span></div>`;
+        }
+      } catch (e) { /* the check is a courtesy — still allow confirming */ }
+      document.getElementById('reviewConfirmDetail').innerHTML = detailHTML(currentBooking) + warn;
       show('stateReviewConfirm');
     } else if (action === 'decline') {
       document.getElementById('reviewDeclineDetail').innerHTML = detailHTML(currentBooking);
@@ -424,10 +449,10 @@ document.getElementById('doConfirmBtn').addEventListener('click', async () => {
       await emailjs.send(window._EMAILJS_SERVICE_ID, window._EMAILJS_TEMPLATE_CLIENT_ID, {
         to_email:    currentBooking.email,
         client_name: currentBooking.name,
-        service:     currentBooking.service,
+        service:     serviceLabel(currentBooking),
         date:        formatDate(currentBooking.date),
         time:        timeRange(currentBooking),
-        contact:     (currentBooking.contactMethod || 'Phone') + ': ' + currentBooking.contactHandle,
+        contact:     (currentBooking.contactMethod || 'Phone') + ': ' + (currentBooking.contactHandle || '—'),
         addons:      (currentBooking.addons || []).join(', ') || 'None'
       }).catch(e => console.warn('Client email failed:', e));
     }
@@ -486,7 +511,7 @@ async function sendClientDecline(bk) {
     await emailjs.send(svc, tpl, {
       to_email:     bk.email,
       client_name:  bk.name || 'there',
-      service:      bk.service || 'your appointment',
+      service:      serviceLabel(bk),
       date:         formatDate(bk.date),
       time:         timeRange(bk),
       booking_link: base + 'index.html'
